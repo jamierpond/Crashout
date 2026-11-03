@@ -1,5 +1,7 @@
 #pragma once
 
+#include "FunctionContainingOffset.h"
+
 #include <eacp/Core/Utils/FilePath.h>
 #include <eacp/Core/Utils/MemoryMappedFile.h>
 
@@ -11,12 +13,6 @@
 
 namespace eacp::CrashReporting::Detail
 {
-struct FunctionContainingOffset
-{
-    std::string mangledName;
-    std::uint64_t distance = 0;
-};
-
 // Reads function names for a library the app loaded from that library's file on
 // disk, since the crash handler process never loaded it. Only the handler uses
 // it, after a crash.

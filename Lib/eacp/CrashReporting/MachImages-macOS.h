@@ -1,5 +1,8 @@
 #pragma once
 
+#include "ImageUuid.h"
+#include "PointerAuthentication.h"
+
 #include <mach-o/loader.h>
 
 #include <array>
@@ -17,8 +20,6 @@ namespace eacp::CrashReporting::Detail
 std::uint64_t getTextSegmentSize(const mach_header_64& header,
                                  std::size_t availableBytes);
 
-using ImageUuid = std::array<std::uint8_t, 16>;
-
 // The image's LC_UUID bytes, the same bounds as getTextSegmentSize.
 std::optional<ImageUuid> findImageUuid(const mach_header_64& header,
                                        std::size_t availableBytes);
@@ -35,8 +36,4 @@ struct DynamicLinkerImage
 
 // dyld itself, which is not among the images _dyld_image_count counts.
 std::optional<DynamicLinkerImage> findDynamicLinkerImage();
-
-// Return addresses on arm64e carry a pointer authentication code above the
-// address bits.
-std::uint64_t stripPointerAuthentication(std::uint64_t address);
 } // namespace eacp::CrashReporting::Detail

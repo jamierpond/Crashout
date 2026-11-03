@@ -261,9 +261,12 @@ void checkWorkerHangReport(const eacp::Vector<CrashReport>& reports)
     check(report.stalledThreads.size() == 1);
 }
 
+// Linux samples no stalled thread until stage 2 of Docs/LinuxCapture.md.
+#if !defined(__linux__)
 auto tStalledWorkerIsReportedByName =
     test("CrashReporting/workerHangStalledWorkerIsReportedByName") = []
 { checkWorkerHangReport(runWorker("stall")); };
+#endif
 
 auto tWorkerWithNoHeartbeatIsNotReported =
     test("CrashReporting/workerHangWorkerWithNoHeartbeatIsNotReported") = []
@@ -273,7 +276,10 @@ auto tWorkerHangDetectionOffReportsNothing =
     test("CrashReporting/workerHangDetectionOffReportsNothing") = []
 { check(runWorker("stall", {"--without-worker-hang-detection"}).empty()); };
 
+// Linux samples no stalled thread until stage 2 of Docs/LinuxCapture.md.
+#if !defined(__linux__)
 auto tEndedWorkersFreeTheirSlots =
     test("CrashReporting/workerHangEndedWorkersFreeTheirSlots") = []
 { checkWorkerHangReport(runWorker("stall-after-finished-workers")); };
+#endif
 } // namespace WorkerHangTests

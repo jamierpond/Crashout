@@ -1,4 +1,4 @@
-#include "SymbolNames-macOS.h"
+#include "SymbolNames-Posix.h"
 
 #include <cxxabi.h>
 

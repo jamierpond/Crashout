@@ -9,7 +9,7 @@ target_sources(eacp-crash-report PRIVATE
 set_default_target_setting(eacp-crash-report)
 eacp_enable_unity_build(eacp-crash-report)
 
-if (NOT ((APPLE AND NOT IOS) OR WIN32))
+if (NOT ((APPLE AND NOT IOS) OR WIN32 OR (LINUX AND NOT ANDROID)))
     return ()
 endif ()
 
@@ -24,23 +24,38 @@ target_sources(eacp-crash-reporting PRIVATE
         SharedState.cpp
         ThreadHeartbeats.cpp)
 
+if (APPLE OR LINUX)
+    target_sources(eacp-crash-reporting PRIVATE
+            CrashClient-Posix.cpp
+            CrashHandlerChannel-Posix.cpp
+            EventStack-Posix.cpp
+            ImageUuid.cpp
+            SymbolNames-Posix.cpp
+            ThreadHooks-Posix.cpp)
+endif ()
+
 if (APPLE)
     target_sources(eacp-crash-reporting PRIVATE
             CrashClient-macOS.cpp
             ThreadHooks-macOS.cpp
             CrashHandlerProcess-macOS.cpp
-            EventStack-macOS.cpp
             HangWatchdog-macOS.cpp
             LoadedLibrarySymbolReader-macOS.cpp
             MachExceptionMessage-macOS.cpp
             MachImages-macOS.cpp
             Minidump-macOS.cpp
-            SymbolNames-macOS.cpp
             TaskCapture-macOS.cpp
             TaskPortHandshake-macOS.cpp
             ThrowSites-macOS.cpp
             UncaughtExceptions-macOS.mm)
     target_link_libraries(eacp-crash-reporting PRIVATE "-framework Foundation")
+elseif (LINUX)
+    target_sources(eacp-crash-reporting PRIVATE
+            CrashClient-Linux.cpp
+            CrashHandlerProcess-Linux.cpp
+            ElfImages-Linux.cpp
+            HangWatchdog-Linux.cpp
+            ThreadHooks-Linux.cpp)
 elseif (WIN32)
     target_sources(eacp-crash-reporting PRIVATE
             CrashClient-Windows.cpp

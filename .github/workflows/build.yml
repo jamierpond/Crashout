@@ -16,8 +16,8 @@ jobs:
             os: macos-latest
             cache-key: macos
             cmake-flags: ''
-          # Only eacp-crash-report and its tests build on Linux, which need
-          # eacp-core alone.
+          # No graphics: the demo app is left out and the library and its
+          # tests need eacp-core alone.
           - name: Linux GCC
             os: ubuntu-latest
             cache-key: linux-gcc
@@ -85,7 +85,7 @@ jobs:
         run: cmake --build build
 
       - name: Test
-        run: ctest --test-dir build --output-on-failure -j 4
+        run: ctest --test-dir build --output-on-failure -j 4 --timeout 600
 
       # A test binary that crashes on macOS logs only its signal; the stack is
       # in the report ReportCrash writes, so a failed lane keeps those.

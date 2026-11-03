@@ -1,6 +1,7 @@
 #include "CrashReportingPlatform.h"
-#include "MachImages-macOS.h"
-#include "SymbolNames-macOS.h"
+#include "PointerAuthentication.h"
+#include "PosixPlatform.h"
+#include "SymbolNames-Posix.h"
 
 #include <eacp/Core/Utils/Strings.h>
 
@@ -35,8 +36,7 @@ StackFrame makeEventFrame(std::uint64_t address)
     if (info.dli_fname != nullptr)
         frame.modulePath = info.dli_fname;
 
-    frame.moduleUuid =
-        getImageUuid(*static_cast<const mach_header_64*>(info.dli_fbase));
+    frame.moduleUuid = getLoadedImageUuid(info.dli_fbase);
 
     if (info.dli_sname != nullptr)
     {

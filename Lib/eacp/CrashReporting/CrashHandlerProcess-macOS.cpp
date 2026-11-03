@@ -1,8 +1,9 @@
-#include "CrashChannel-macOS.h"
+#include "CrashChannel-Posix.h"
+#include "CrashHandlerChannel-Posix.h"
 #include "CrashReportingPlatform.h"
 #include "LoadedLibrarySymbolReader-macOS.h"
 #include "MachImages-macOS.h"
-#include "SymbolNames-macOS.h"
+#include "SymbolNames-Posix.h"
 #include "Minidump-macOS.h"
 #include "TaskCapture-macOS.h"
 #include "TaskPortHandshake-macOS.h"
@@ -31,59 +32,6 @@ namespace
 {
 constexpr auto signalTrampolineSymbol = std::string_view {"_sigtramp"};
 
-enum class CrashPipeEvent
-{
-    crash,
-    hang,
-    appExited
-};
-
-CrashPipeEvent waitForCrashPipeEvent()
-{
-    auto byte = char {};
-
-    while (true)
-    {
-        auto count = ::read(handlerCrashPipeFileDescriptor, &byte, 1);
-
-        if (count < 0 && errno == EINTR)
-            continue;
-
-        if (count == 1 && byte == crashNotificationByte)
-            return CrashPipeEvent::crash;
-
-        if (count == 1 && byte == hangNotificationByte)
-            return CrashPipeEvent::hang;
-
-        return CrashPipeEvent::appExited;
-    }
-}
-
-std::optional<std::reference_wrapper<SharedState>> mapInheritedSharedState()
-{
-    auto* mapping = ::mmap(nullptr,
-                           sizeof(SharedState),
-                           PROT_READ | PROT_WRITE,
-                           MAP_SHARED,
-                           handlerSharedMemoryFileDescriptor,
-                           0);
-
-    if (mapping == MAP_FAILED)
-        return std::nullopt;
-
-    auto& state = *static_cast<SharedState*>(mapping);
-
-    if (!isSharedStateValid(state))
-        return std::nullopt;
-
-    return state;
-}
-
-void signalHandlerReady()
-{
-    ::write(handlerReadyPipeFileDescriptor, &handlerReadyByte, 1);
-    ::close(handlerReadyPipeFileDescriptor);
-}
 std::map<std::string, std::uint64_t> getHandlerImageBases()
 {
     auto bases = std::map<std::string, std::uint64_t> {};

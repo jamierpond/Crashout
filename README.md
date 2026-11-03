@@ -5,9 +5,11 @@ moved out of eacp into a library of its own. When the app crashes, a handler
 process started from the app's own executable writes a report: the crashed
 thread's symbolised stack, a minidump, metadata and attachments. The app's own
 code then receives that report. It also reports hangs, stack overflows,
-uncaught exceptions and runs that ended with no report. macOS and Windows; the
-report types and the report database (`eacp-crash-report`) build everywhere,
-Linux included, so a service can read the reports with the same structs.
+uncaught exceptions and runs that ended with no report. macOS and Windows,
+and on Linux crashes and uncaught exceptions so far, with no minidump
+(`Docs/LinuxCapture.md`); the report types and the report database
+(`eacp-crash-report`) build everywhere, so a service can read the reports with
+the same structs.
 
 The namespace and include paths are eacp's: `eacp::CrashReporting`,
 `<eacp/CrashReporting/CrashReporting.h>`.

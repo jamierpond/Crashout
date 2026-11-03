@@ -793,6 +793,8 @@ auto tCrashReportThreadEntry =
     check(hasFrameInFunction(report, backgroundEntryFunction));
 };
 
+// Linux gives new threads no alternate stack until stage 2 of Docs/LinuxCapture.md.
+#if !defined(__linux__)
 auto tCrashReportBackgroundStackOverflow =
     test("CrashReport/backgroundStackOverflowFramesAreTheRecursion") = []
 {
@@ -800,6 +802,7 @@ auto tCrashReportBackgroundStackOverflow =
         crashTheCrashingProcess("stackoverflow", FaultThread::background),
         "recurseForever"));
 };
+#endif
 
 auto tCrashReportThrowSite =
     test("CrashReport/uncaughtExceptionShowsTheThrowSite") = []

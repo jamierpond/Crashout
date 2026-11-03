@@ -1,4 +1,4 @@
-#include "CrashClient-macOS.h"
+#include "CrashClient-Posix.h"
 #include "CrashReportingPlatform.h"
 #include "MachImages-macOS.h"
 

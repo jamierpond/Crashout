@@ -19,7 +19,8 @@ enum class Lane
     windowsX64ClangCl,
     windowsArm64Msvc,
     windowsArm64ClangCl,
-    linux
+    linuxX64,
+    linuxArm64
 };
 
 enum class OutcomeStatus
@@ -58,7 +59,7 @@ struct MatrixCell
 {
     std::string_view fault;
     ThreadChoice thread = ThreadChoice::main;
-    Lane lane = Lane::linux;
+    Lane lane = Lane::macOSArm64;
     ExpectedOutcome outcome;
 };
 

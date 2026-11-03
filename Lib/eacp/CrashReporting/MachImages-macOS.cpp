@@ -1,8 +1,5 @@
 #include "MachImages-macOS.h"
 
-#include <eacp/Core/Utils/Format.h>
-#include <ea_data_structures/Utilities/VectorUtilities.h>
-
 #include <mach-o/dyld_images.h>
 #include <mach/mach.h>
 
@@ -17,22 +14,6 @@ namespace
 {
 constexpr auto textSegmentName = std::string_view {SEG_TEXT};
 constexpr auto userAddressMask = std::uint64_t {0x00007FFFFFFFFFFF};
-constexpr auto uuidGroupEnds = std::to_array<std::size_t>({4, 6, 8, 10});
-
-std::string formatUuid(const ImageUuid& bytes)
-{
-    auto text = std::string {};
-
-    for (auto index = std::size_t {0}; index < bytes.size(); ++index)
-    {
-        if (EA::Vectors::contains(uuidGroupEnds, index))
-            text += '-';
-
-        text += Strings::format("{:02X}", bytes[index]);
-    }
-
-    return text;
-}
 } // namespace
 
 std::uint64_t getTextSegmentSize(const mach_header_64& header,
@@ -118,7 +99,7 @@ std::string getImageUuid(const mach_header_64& header)
     if (!uuid)
         return {};
 
-    return formatUuid(*uuid);
+    return formatImageUuid(*uuid);
 }
 
 std::optional<DynamicLinkerImage> findDynamicLinkerImage()

@@ -93,6 +93,8 @@ auto tStartingThreadOnly = test("StackOverflow/startingThreadCoversOnlyItself") 
     check(contains(output, newThreadHasNoStack));
 };
 
+// Linux gives new threads no alternate stack until stage 2 of Docs/LinuxCapture.md.
+#if !defined(__linux__)
 auto tEveryThread = test("StackOverflow/everyThreadCoversARawStdThread") = []
 {
     auto output = checkStackOverflowStacks("everyThread");
@@ -103,6 +105,7 @@ auto tEveryThread = test("StackOverflow/everyThreadCoversARawStdThread") = []
 auto tEveryThreadReports =
     test("StackOverflow/everyThreadReportsAnOverflowOnARawStdThread") = []
 { check(doesOverflowOnNewThreadReport("everyThread")); };
+#endif
 
 // Signals only: with no stack left for the signal handler, macOS faults again on delivery
 // and the thread spins there instead of dying, so the probe is killed.

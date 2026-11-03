@@ -4,7 +4,9 @@
 # Every build also gets its symbols, since a report's moduleUuid changes with
 # each one: a <target>.dSYM beside the executable or bundle on macOS, a PDB in
 # every configuration on Windows. SYMBOLS_DIR <dir> copies them there as
-# <target>-<version> (the app's VERSION), or <target> when it has none.
+# <target>-<version> (the app's VERSION), or <target> when it has none. Linux
+# leaves the symbols in the executable, links it with a GNU build id, and
+# copies nothing.
 #
 # On Windows, eacp-windows-error-reporting-helper.dll is copied beside the
 # executable (its PDB into SYMBOLS_DIR): Windows Error Reporting loads it for
@@ -24,8 +26,8 @@ function(eacp_enable_crash_reporting target)
 
     if (NOT TARGET eacp-crash-reporting)
         message(FATAL_ERROR
-                "eacp_enable_crash_reporting: crash reporting is built on macOS "
-                "and Windows only")
+                "eacp_enable_crash_reporting: crash reporting is built on macOS, "
+                "Windows and Linux only")
     endif ()
 
     target_link_libraries(${target} PRIVATE eacp-crash-reporting)
@@ -92,6 +94,10 @@ function(eacp_add_crash_symbols target symbols_dir)
                             ${symbols_dir}/${symbols_name}.dSYM
                     VERBATIM)
         endif ()
+    elseif (LINUX)
+        # A report's moduleUuid is the GNU build id, which not every linker
+        # writes unasked.
+        target_link_options(${target} PRIVATE "LINKER:--build-id")
     elseif (WIN32 AND MSVC)
         # CMake's defaults give Release and MinSizeRel neither debug info nor
         # /DEBUG; /OPT:REF,ICF restores what /DEBUG would turn off there.

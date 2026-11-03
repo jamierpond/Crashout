@@ -8,6 +8,9 @@ using namespace std::string_view_literals;
 
 constexpr auto threadWatchPullRequest = 184;
 
+// Opened once stage 1 of Docs/LinuxCapture.md is reviewed.
+constexpr auto linuxStageTwoPullRequest = 0;
+
 struct LaneName
 {
     Lane lane;
@@ -21,12 +24,24 @@ constexpr auto laneNames = Array {
     LaneName {Lane::windowsX64ClangCl, "Windows x64 clang-cl"},
     LaneName {Lane::windowsArm64Msvc, "Windows ARM64 MSVC"},
     LaneName {Lane::windowsArm64ClangCl, "Windows ARM64 clang-cl"},
-    LaneName {Lane::linux, "Linux"},
+    LaneName {Lane::linuxX64, "Linux x86_64"},
+    LaneName {Lane::linuxArm64, "Linux arm64"},
 };
 
 bool isMac(Lane lane)
 {
     return lane == Lane::macOSArm64 || lane == Lane::macOSX64;
+}
+
+bool isWindows(Lane lane)
+{
+    return lane == Lane::windowsX64Msvc || lane == Lane::windowsX64ClangCl
+           || lane == Lane::windowsArm64Msvc || lane == Lane::windowsArm64ClangCl;
+}
+
+bool isLinux(Lane lane)
+{
+    return lane == Lane::linuxX64 || lane == Lane::linuxArm64;
 }
 
 bool isArm64Windows(Lane lane)
@@ -52,7 +67,7 @@ ExpectedOutcome reported(Lane lane, std::string_view reason)
     outcome.status = OutcomeStatus::reported;
     outcome.reason = reason;
     outcome.hasStack = true;
-    outcome.hasMinidump = !isMac(lane);
+    outcome.hasMinidump = isWindows(lane);
     outcome.stackReachesFault = true;
     return outcome;
 }
@@ -305,10 +320,64 @@ ExpectedOutcome expectBadSystemCall(Lane lane)
     return reportedThroughMach(lane, "SIGSYS");
 }
 
+// Stage 1 of Docs/LinuxCapture.md: the app's signal handler walks its own
+// stack and the handler process symbolises it.
+ExpectedOutcome expectOnLinux(std::string_view fault, ThreadChoice thread, Lane lane)
+{
+    auto isArm64 = lane == Lane::linuxArm64;
+
+    if (fault == "nullptr")
+        return reported(lane, "SIGSEGV");
+
+    if (fault == "divide" && isArm64)
+        return notAvailable("arm64 does not trap an integer divide by zero");
+
+    if (fault == "divide")
+        return reported(lane, "SIGFPE");
+
+    if (fault == "stackoverflow" && isBackground(thread))
+        return pending("a background thread has no alternate signal stack until "
+                       "pthread_create is interposed",
+                       linuxStageTwoPullRequest);
+
+    if (fault == "stackoverflow")
+        return reported(lane, "SIGSEGV");
+
+    if (fault == "abort")
+        return reported(lane, "SIGABRT");
+
+    if (fault == "terminate")
+        return reported(lane, "std::terminate");
+
+    if (fault == "illegalinstruction")
+        return reported(lane, "SIGILL");
+
+    if (fault == "floatingpoint" && isArm64)
+        return notAvailable("ARM64 cores do not implement floating-point traps");
+
+    if (fault == "fastfail")
+        return notAvailable("__fastfail is Windows-only");
+
+    if (fault == "privilegedinstruction")
+        return notAvailable("the fault halts from user mode on Windows x64 only");
+
+    if (fault == "heapsmash")
+        return notAvailable("only macOS captures from outside the app, which "
+                            "is what lets the report survive the heap");
+
+    if (fault == "guardpage" || fault == "inpageerror")
+        return notAvailable("a Windows memory-manager exception");
+
+    if (fault == "buserror" || fault == "guardedfd" || fault == "sigsys")
+        return notAvailable("raised on macOS only");
+
+    return pending("stage 2 of Docs/LinuxCapture.md", linuxStageTwoPullRequest);
+}
+
 ExpectedOutcome expectOutcome(std::string_view fault, ThreadChoice thread, Lane lane)
 {
-    if (lane == Lane::linux)
-        return notAvailable("no crash reporter on Linux");
+    if (isLinux(lane))
+        return expectOnLinux(fault, thread, lane);
 
     if (fault == "nullptr")
     {
@@ -455,8 +524,10 @@ Lane getCurrentLane()
     return Lane::windowsX64ClangCl;
 #elif defined(_WIN32)
     return Lane::windowsX64Msvc;
+#elif defined(__aarch64__)
+    return Lane::linuxArm64;
 #else
-    return Lane::linux;
+    return Lane::linuxX64;
 #endif
 }
 

@@ -70,6 +70,9 @@ CrashReport checkEvent(std::string_view kind, std::string_view caller)
     return report;
 }
 
+// Linux names only exported functions in an event's stack until stage 2 of
+// Docs/LinuxCapture.md.
+#if !defined(__linux__)
 auto tMessage = test("CrashEvent/messageIsReportedAndTheAppRuns") = []
 {
     auto report = checkEvent("message", "reportMessageEvent");
@@ -86,6 +89,7 @@ auto tException = test("CrashEvent/caughtExceptionIsReportedAndTheAppRuns") = []
     check(report.message
           == "std::runtime_error: " + std::string {Faults::faultEventMessage});
 };
+#endif
 
 auto tPending = test("CrashEvent/reachesPendingReportFound") = []
 {

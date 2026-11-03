@@ -1,5 +1,6 @@
 #include "LoadedLibrarySymbolReader-macOS.h"
 #include "MachImages-macOS.h"
+#include "ReadValue.h"
 
 #include <mach-o/fat.h>
 #include <mach-o/nlist.h>
@@ -19,17 +20,6 @@ constexpr auto processCpuType = cpu_type_t {CPU_TYPE_ARM64};
 #else
 constexpr auto processCpuType = cpu_type_t {CPU_TYPE_X86_64};
 #endif
-
-template <typename Value>
-std::optional<Value> readValue(Span<const std::uint8_t> bytes, std::size_t offset)
-{
-    if (offset + sizeof(Value) > bytes.getSize())
-        return std::nullopt;
-
-    auto value = Value {};
-    std::memcpy(&value, bytes.data() + offset, sizeof(Value));
-    return value;
-}
 
 // A universal file's header and arch table are big-endian.
 std::optional<std::size_t> findSliceForThisProcess(Span<const std::uint8_t> bytes)

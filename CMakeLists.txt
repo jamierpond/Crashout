@@ -25,7 +25,7 @@ endif ()
 add_subdirectory(Lib/eacp/CrashReporting)
 target_include_directories(eacp-crash-report PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/Lib")
 
-if (CRASHOUT_ENABLE_EXAMPLES AND TARGET eacp-crash-reporting)
+if (CRASHOUT_ENABLE_EXAMPLES AND TARGET eacp-crash-reporting AND TARGET eacp-ui)
     add_subdirectory(Apps/CrashReporting)
 endif ()
 

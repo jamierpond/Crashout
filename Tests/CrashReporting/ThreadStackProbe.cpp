@@ -17,10 +17,15 @@
 #if defined(_WIN32)
 #include <eacp/Core/Utils/WinInclude.h>
 #include <psapi.h>
-#else
+#elif defined(__APPLE__)
 #include <csignal>
 #include <dispatch/dispatch.h>
 #include <mach/mach.h>
+#else
+#include <eacp/Core/Utils/Files.h>
+
+#include <csignal>
+#include <unistd.h>
 #endif
 
 namespace eacp::CrashReporting::Tests
@@ -88,6 +93,7 @@ bool hasStackOverflowStack()
     return current >= stackOverflowReserveBytes;
 }
 #else
+#if defined(__APPLE__)
 double getResidentKibibytes()
 {
     auto info = mach_task_basic_info_data_t {};
@@ -98,6 +104,18 @@ double getResidentKibibytes()
                 &count);
     return static_cast<double>(info.resident_size) / bytesPerKibibyte;
 }
+#else
+// /proc/self/statm's second field: resident pages.
+double getResidentKibibytes()
+{
+    auto fields =
+        Strings::split(Files::readFile(FilePath {"/proc/self/statm"}), ' ');
+    auto pages =
+        fields.size() > 1 ? Strings::tryParse<long>(fields[1]) : std::nullopt;
+    auto pageBytes = static_cast<double>(::sysconf(_SC_PAGESIZE));
+    return static_cast<double>(pages.value_or(0)) * pageBytes / bytesPerKibibyte;
+}
+#endif
 
 bool hasStackOverflowStack()
 {

@@ -1,4 +1,5 @@
 #include "UncaughtExceptions-macOS.h"
+#include "CrashClient-Posix.h"
 
 #import <Foundation/Foundation.h>
 
