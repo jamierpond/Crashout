@@ -87,15 +87,6 @@ ExpectedOutcome notAvailable(std::string_view note)
     return outcome;
 }
 
-ExpectedOutcome pending(std::string_view note, int pullRequest)
-{
-    auto outcome = ExpectedOutcome {};
-    outcome.status = OutcomeStatus::pendingPR;
-    outcome.note = note;
-    outcome.pullRequest = pullRequest;
-    return outcome;
-}
-
 ExpectedOutcome expectDivide(Lane lane)
 {
     if (lane == Lane::macOSArm64)

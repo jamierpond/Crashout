@@ -15,7 +15,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/CMake")
 option(CRASHOUT_ENABLE_TESTS "Build Crashout's tests" ${PROJECT_IS_TOP_LEVEL})
 option(CRASHOUT_ENABLE_EXAMPLES "Build Crashout's demo app" ${PROJECT_IS_TOP_LEVEL})
 
-include(FindEacp)
+include(Findeacp)
 include(CrashReporting)
 
 if (PROJECT_IS_TOP_LEVEL)

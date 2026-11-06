@@ -17,7 +17,7 @@ unchanged: namespace `eacp::CrashReporting`, includes
 `<eacp/CrashReporting/...>`, targets `eacp-crash-report`,
 `eacp-crash-reporting`, `eacp-crash-faults` and
 `eacp-windows-error-reporting-helper`. eacp is fetched by CPM
-(`CMake/FindEacp.cmake`); `-DCPM_eacp_SOURCE=$HOME/...` builds against a local
+(`CMake/Findeacp.cmake`); `-DCPM_eacp_SOURCE=$HOME/...` builds against a local
 checkout. `README.md` is for users of the library; `Docs/CrashReporting.md`
 is how it works inside.
 
