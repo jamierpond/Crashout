@@ -35,6 +35,9 @@ constexpr auto bytesPerKibibyte = 1024.0;
 
 #if defined(_WIN32)
 constexpr auto stackOverflowReserveBytes = ULONG {64 * 1024};
+constexpr auto smallThreadStackReserveBytes = SIZE_T {128 * 1024};
+constexpr auto touchedStackBytes = 64 * 1024;
+constexpr auto pageBytes = 4096;
 #endif
 
 using Clock = std::chrono::steady_clock;
@@ -106,6 +109,20 @@ bool hasStackOverflowStack()
     return (current.ss_flags & SS_DISABLE) == 0;
 }
 #endif
+
+#if defined(_WIN32)
+DWORD WINAPI checkStackAndTouchMostOfIt(LPVOID hasStackResult)
+{
+    *static_cast<bool*>(hasStackResult) = hasStackOverflowStack();
+
+    volatile char touched[touchedStackBytes];
+
+    for (auto offset = 0; offset < touchedStackBytes; offset += pageBytes)
+        touched[offset] = 1;
+
+    return 0;
+}
+#endif
 } // namespace
 
 int runThreadMemoryMeasurement()
@@ -170,6 +187,26 @@ int runThreadStackCheck()
     dispatch_semaphore_wait(done, DISPATCH_TIME_FOREVER);
     dispatch_release(done);
     Console::print("dispatch worker: " + std::to_string(workerHasStack));
+#endif
+    return 0;
+}
+
+int runSmallStackThreadCheck()
+{
+#if defined(_WIN32)
+    auto smallStackThreadHasStack = false;
+    auto thread = ::CreateThread(nullptr,
+                                 smallThreadStackReserveBytes,
+                                 &checkStackAndTouchMostOfIt,
+                                 &smallStackThreadHasStack,
+                                 STACK_SIZE_PARAM_IS_A_RESERVATION,
+                                 nullptr);
+    ::WaitForSingleObject(thread, INFINITE);
+    ::CloseHandle(thread);
+
+    Console::print("small stack thread: "
+                   + std::to_string(smallStackThreadHasStack));
+    Console::print("small stack thread survived");
 #endif
     return 0;
 }

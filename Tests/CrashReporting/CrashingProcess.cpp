@@ -325,6 +325,9 @@ std::optional<int> runThreadStackProbe(std::string_view probe)
     if (probe == "overflow")
         return overflowANewStdThread();
 
+    if (probe == "smallStack")
+        return runSmallStackThreadCheck();
+
     return std::nullopt;
 }
 } // namespace
@@ -386,7 +389,9 @@ int runCrashingProcess()
                settings.probe,
                "bench (create and join std::threads), memory (resident KiB of "
                "100 live threads), check (which threads have a stack for "
-               "overflow reports) or overflow (overflow a new std::thread)");
+               "overflow reports), overflow (overflow a new std::thread) or "
+               "smallStack (whether a Windows thread with a 128 KB stack gets a "
+               "stack for overflow reports, and survives using 64 KB of it)");
     cli.option("--crash-in-library",
                settings.libraryFunction,
                "the function to call in the crashing library, loaded at runtime");
