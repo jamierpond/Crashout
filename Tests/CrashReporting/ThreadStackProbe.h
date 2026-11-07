@@ -7,4 +7,5 @@ int runThreadCreationBench();
 int runThreadMemoryMeasurement();
 int runThreadStackCheck();
 int overflowANewStdThread();
+int runSmallStackThreadCheck();
 } // namespace eacp::CrashReporting::Tests

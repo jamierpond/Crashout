@@ -9,6 +9,10 @@ namespace eacp::CrashReporting::Detail
 namespace
 {
 constexpr auto stackOverflowReserveBytes = ULONG {64 * 1024};
+// A thread sized by its creator, a driver or a library, keeps all of it: a 64 KB
+// bite from a 128 KB stack overflows it at once.
+constexpr auto smallestStackThatCanSpareTheReserveBytes =
+    ULONG_PTR {8 * stackOverflowReserveBytes};
 
 std::atomic<bool> shouldInstallOnNewThreads {false};
 std::atomic<bool> shouldReleaseWatchOnThreadEnd {false};
@@ -25,11 +29,22 @@ void NTAPI handleThreadAttachAndDetach(PVOID, DWORD reason, PVOID)
         && shouldReleaseWatchOnThreadEnd.load(std::memory_order_relaxed))
         releaseWatchOfThread(::GetCurrentThreadId());
 }
+
+bool canCurrentThreadSpareTheReserve()
+{
+    auto lowest = ULONG_PTR {0};
+    auto highest = ULONG_PTR {0};
+    ::GetCurrentThreadStackLimits(&lowest, &highest);
+    return highest - lowest >= smallestStackThatCanSpareTheReserveBytes;
+}
 } // namespace
 
 // The reserve can only grow, so a thread that has as much keeps what it has.
 bool installStackOverflowStackOnCurrentThread()
 {
+    if (!canCurrentThreadSpareTheReserve())
+        return false;
+
     auto current = ULONG {0};
     ::SetThreadStackGuarantee(&current);
 

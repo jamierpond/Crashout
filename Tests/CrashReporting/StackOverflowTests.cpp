@@ -22,6 +22,10 @@ constexpr auto startingThreadHasStack = std::string_view {"starting thread: 1"};
 constexpr auto startingThreadHasNoStack = std::string_view {"starting thread: 0"};
 constexpr auto newThreadHasStack = std::string_view {"new thread: 1"};
 constexpr auto newThreadHasNoStack = std::string_view {"new thread: 0"};
+constexpr auto smallStackThreadHasNoStack =
+    std::string_view {"small stack thread: 0"};
+constexpr auto smallStackThreadSurvived =
+    std::string_view {"small stack thread survived"};
 
 Processes::ProcessOptions makeThreadStackProbeOptions(std::string_view probe,
                                                       std::string_view reporting,
@@ -98,6 +102,21 @@ auto tEveryThread = test("StackOverflow/everyThreadCoversARawStdThread") = []
     auto output = checkStackOverflowStacks("everyThread");
     check(contains(output, startingThreadHasStack));
     check(contains(output, newThreadHasStack));
+};
+
+auto tSmallStackKeepsItsStack =
+    test("StackOverflow/everyThreadLeavesASmallStackThreadItsWholeStack") = []
+{
+    if (!Platform::isWindows())
+        return;
+
+    check(contains(checkStackOverflowStacks("everyThread"), newThreadHasStack));
+
+    auto database = TemporaryFile {};
+    auto output =
+        runStackOverflowProbe("smallStack", "everyThread", database.path()).output;
+    check(contains(output, smallStackThreadHasNoStack));
+    check(contains(output, smallStackThreadSurvived));
 };
 
 auto tEveryThreadReports =
