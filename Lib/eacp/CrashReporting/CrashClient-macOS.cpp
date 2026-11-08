@@ -411,10 +411,15 @@ Vector<char*> makeArgumentPointers(Vector<std::string>& arguments)
     return pointers;
 }
 
+struct HandlerDescriptors
+{
+    int sharedState = -1;
+    PipeEnds crashPipe;
+    PipeEnds readyPipe;
+};
+
 std::optional<pid_t> spawnHandler(const HandlerLaunch& launch,
-                                  int sharedDescriptor,
-                                  const PipeEnds& crashPipe,
-                                  const PipeEnds& readyPipe,
+                                  const HandlerDescriptors& descriptors,
                                   const std::optional<HandshakePort>& handshake)
 {
     auto channel =
@@ -424,9 +429,11 @@ std::optional<pid_t> spawnHandler(const HandlerLaunch& launch,
 
     auto actions = posix_spawn_file_actions_t {};
     ::posix_spawn_file_actions_init(&actions);
-    auto movedShared = DescriptorAboveHandlerSlots {sharedDescriptor};
-    auto movedCrashPipe = DescriptorAboveHandlerSlots {crashPipe.readEnd};
-    auto movedReadyPipe = DescriptorAboveHandlerSlots {readyPipe.writeEnd};
+    auto movedShared = DescriptorAboveHandlerSlots {descriptors.sharedState};
+    auto movedCrashPipe =
+        DescriptorAboveHandlerSlots {descriptors.crashPipe.readEnd};
+    auto movedReadyPipe =
+        DescriptorAboveHandlerSlots {descriptors.readyPipe.writeEnd};
     ::posix_spawn_file_actions_adddup2(
         &actions, movedShared.descriptor, handlerSharedMemoryFileDescriptor);
     ::posix_spawn_file_actions_adddup2(
@@ -588,13 +595,43 @@ SharedState& createSharedState(const HandlerLaunch&)
     return privateState;
 }
 
-bool launchHandlerProcess(const HandlerLaunch& launch, SharedState&)
+std::optional<HandlerDescriptors>
+    createHandlerDescriptors(const MacCrashClient& client)
 {
-    auto& client = getMacCrashClient();
     auto crashPipe = createPipe();
     auto readyPipe = createPipe();
 
-    if (client.sharedStateDescriptor < 0 || !crashPipe || !readyPipe)
+    if (client.sharedStateDescriptor < 0)
+        return std::nullopt;
+
+    if (!crashPipe || !readyPipe)
+        return std::nullopt;
+
+    return HandlerDescriptors {client.sharedStateDescriptor, *crashPipe, *readyPipe};
+}
+
+// Answered before the ready byte is read: the handler asks first.
+void finishHandshake(MacCrashClient& client,
+                     std::optional<HandshakePort>& handshake,
+                     const std::optional<pid_t>& spawned,
+                     Time::MS timeout)
+{
+    if (!handshake)
+        return;
+
+    if (spawned)
+        client.isMachCaptureActive =
+            answerHandshakeWithTaskPort(*handshake, timeout);
+
+    destroyHandshakePort(*handshake);
+}
+
+bool launchHandlerProcess(const HandlerLaunch& launch, SharedState&)
+{
+    auto& client = getMacCrashClient();
+    auto descriptors = createHandlerDescriptors(client);
+
+    if (!descriptors)
         return false;
 
     auto handshake = std::optional<HandshakePort> {};
@@ -602,31 +639,24 @@ bool launchHandlerProcess(const HandlerLaunch& launch, SharedState&)
     if (launch.captureMachExceptions)
         handshake = createHandshakePort();
 
-    auto spawned = spawnHandler(
-        launch, client.sharedStateDescriptor, *crashPipe, *readyPipe, handshake);
-    ::close(crashPipe->readEnd);
-    ::close(readyPipe->writeEnd);
+    auto spawned = spawnHandler(launch, *descriptors, handshake);
+    ::close(descriptors->crashPipe.readEnd);
+    ::close(descriptors->readyPipe.writeEnd);
+    finishHandshake(client, handshake, spawned, launch.startTimeout);
 
-    // Answered before the ready byte is read: the handler asks first.
-    if (spawned && handshake)
-        client.isMachCaptureActive =
-            answerHandshakeWithTaskPort(*handshake, launch.startTimeout);
-
-    if (handshake)
-        destroyHandshakePort(*handshake);
-
-    auto ready = spawned.has_value()
-                 && waitForHandlerReady(readyPipe->readEnd, launch.startTimeout);
-    ::close(readyPipe->readEnd);
+    auto ready =
+        spawned.has_value()
+        && waitForHandlerReady(descriptors->readyPipe.readEnd, launch.startTimeout);
+    ::close(descriptors->readyPipe.readEnd);
 
     if (!ready)
     {
-        ::close(crashPipe->writeEnd);
+        ::close(descriptors->crashPipe.writeEnd);
         return false;
     }
 
-    ::fcntl(crashPipe->writeEnd, F_SETNOSIGPIPE, 1);
-    client.crashPipeWriteEnd = crashPipe->writeEnd;
+    ::fcntl(descriptors->crashPipe.writeEnd, F_SETNOSIGPIPE, 1);
+    client.crashPipeWriteEnd = descriptors->crashPipe.writeEnd;
     client.handlerProcessId = *spawned;
     return true;
 }

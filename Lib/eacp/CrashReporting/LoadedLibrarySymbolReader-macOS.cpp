@@ -67,8 +67,29 @@ std::optional<std::size_t> findSliceForThisProcess(Span<const std::uint8_t> byte
 struct SymbolTableLayout
 {
     std::uint64_t textAddress = 0;
-    symtab_command symbolTable {};
+    std::optional<symtab_command> symbolTable;
 };
+
+bool isTextSegment(const segment_command_64& segment)
+{
+    return std::string_view {segment.segname} == imageFileTextSegmentName;
+}
+
+void readTextSegmentAddress(Span<const std::uint8_t> commandBytes,
+                            SymbolTableLayout& layout)
+{
+    auto segment = readValue<segment_command_64>(commandBytes, 0);
+
+    if (segment && isTextSegment(*segment))
+        layout.textAddress = segment->vmaddr;
+}
+
+void readSymbolTable(Span<const std::uint8_t> commandBytes,
+                     SymbolTableLayout& layout)
+{
+    if (auto table = readValue<symtab_command>(commandBytes, 0))
+        layout.symbolTable = *table;
+}
 
 std::optional<SymbolTableLayout>
     readSymbolTableLayout(Span<const std::uint8_t> bytes,
@@ -80,7 +101,6 @@ std::optional<SymbolTableLayout>
         return std::nullopt;
 
     auto layout = SymbolTableLayout {};
-    auto hasTable = false;
     auto offset = thisArchitectureHeaderOffset + sizeof(mach_header_64);
 
     for (auto index = 0u; index < header->ncmds; ++index)
@@ -90,28 +110,19 @@ std::optional<SymbolTableLayout>
         if (!command || command->cmdsize == 0)
             return std::nullopt;
 
-        if (command->cmd == LC_SEGMENT_64)
-        {
-            auto segment = readValue<segment_command_64>(bytes, offset);
+        auto commandBytes = Span<const std::uint8_t> {
+            bytes.data() + offset, bytes.data() + bytes.getSize()};
 
-            if (segment
-                && std::string_view {segment->segname} == imageFileTextSegmentName)
-                layout.textAddress = segment->vmaddr;
-        }
+        if (command->cmd == LC_SEGMENT_64)
+            readTextSegmentAddress(commandBytes, layout);
 
         if (command->cmd == LC_SYMTAB)
-        {
-            if (auto table = readValue<symtab_command>(bytes, offset))
-            {
-                layout.symbolTable = *table;
-                hasTable = true;
-            }
-        }
+            readSymbolTable(commandBytes, layout);
 
         offset += command->cmdsize;
     }
 
-    if (!hasTable)
+    if (!layout.symbolTable)
         return std::nullopt;
 
     return layout;
@@ -130,6 +141,39 @@ std::string removeLeadingUnderscore(std::string_view name)
 
     return std::string {name};
 }
+
+bool isCloserFunctionSymbol(const nlist_64& symbol,
+                            const std::optional<nlist_64>& best,
+                            std::uint64_t target)
+{
+    if (!isDefinedFunctionSymbol(symbol) || symbol.n_value > target)
+        return false;
+
+    return !best || symbol.n_value > best->n_value;
+}
+
+std::optional<nlist_64> findClosestFunctionSymbol(Span<const std::uint8_t> bytes,
+                                                  std::size_t tableStart,
+                                                  std::uint32_t symbolCount,
+                                                  std::uint64_t target)
+{
+    auto best = std::optional<nlist_64> {};
+
+    for (auto index = 0u; index < symbolCount; ++index)
+    {
+        auto symbol =
+            readValue<nlist_64>(bytes, tableStart + index * sizeof(nlist_64));
+
+        if (!symbol)
+            return std::nullopt;
+
+        if (isCloserFunctionSymbol(*symbol, best, target))
+            best = symbol;
+    }
+
+    return best;
+}
+
 } // namespace
 
 LoadedLibrarySymbolReader::LoadedLibrarySymbolReader(const FilePath& path)
@@ -179,24 +223,10 @@ std::optional<FunctionContainingOffset>
         return std::nullopt;
 
     auto target = layout->textAddress + offset;
-    auto tableStart = *thisArchitectureHeaderOffset + layout->symbolTable.symoff;
-    auto namesStart = *thisArchitectureHeaderOffset + layout->symbolTable.stroff;
-    auto best = std::optional<nlist_64> {};
-
-    for (auto index = 0u; index < layout->symbolTable.nsyms; ++index)
-    {
-        auto symbol =
-            readValue<nlist_64>(bytes, tableStart + index * sizeof(nlist_64));
-
-        if (!symbol)
-            return std::nullopt;
-
-        auto isCandidate =
-            isDefinedFunctionSymbol(*symbol) && symbol->n_value <= target;
-
-        if (isCandidate && (!best || symbol->n_value > best->n_value))
-            best = symbol;
-    }
+    auto tableStart = *thisArchitectureHeaderOffset + layout->symbolTable->symoff;
+    auto namesStart = *thisArchitectureHeaderOffset + layout->symbolTable->stroff;
+    auto best = findClosestFunctionSymbol(
+        bytes, tableStart, layout->symbolTable->nsyms, target);
 
     if (!best)
         return std::nullopt;

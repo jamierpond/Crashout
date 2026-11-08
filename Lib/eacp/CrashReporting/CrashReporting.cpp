@@ -270,9 +270,10 @@ void armHangDetection(CrashReportingSession& session, Detail::SharedState& state
     auto& hang = state.hang;
 
     auto isOff = session.options.hangDetection == HangDetection::off;
+    auto hasTimings =
+        hang.thresholdMilliseconds != 0 && hang.pollIntervalMilliseconds != 0;
 
-    if (isOff || hang.thresholdMilliseconds == 0
-        || hang.pollIntervalMilliseconds == 0)
+    if (isOff || !hasTimings)
         return;
 
     session.threadsWatched = true;
@@ -356,7 +357,10 @@ bool start(const Options& options)
     {
         auto lock = std::lock_guard {session.mutex};
 
-        if (session.started || session.stopped || session.handlerProcess)
+        if (session.started || session.stopped)
+            return false;
+
+        if (session.handlerProcess)
             return false;
 
         session.started = true;

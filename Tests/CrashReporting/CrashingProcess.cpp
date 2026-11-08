@@ -219,7 +219,9 @@ int crashNow(const CrashingProcessSettings& settings)
     auto fault = Faults::findFault(settings.fault);
     auto thread = Faults::findThreadChoice(settings.threadName);
 
-    if (!fault || !fault->get().isAvailable || !thread)
+    auto isFaultAvailable = fault && fault->get().isAvailable;
+
+    if (!isFaultAvailable || !thread)
     {
         Console::printError("no fault called " + settings.fault + " on a "
                             + settings.threadName + " thread here");

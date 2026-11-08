@@ -290,99 +290,80 @@ ExpectedOutcome expectBadSystemCall(Lane lane)
     return reportedThroughMach(lane, "SIGSYS");
 }
 
-ExpectedOutcome expectOutcome(std::string_view fault, ThreadChoice thread, Lane lane)
+ExpectedOutcome expectNullPointer(Lane lane)
+{
+    if (isMac(lane))
+        return reportedThroughMach(lane, "EXC_BAD_ACCESS");
+
+    return reported(lane, "EXCEPTION_ACCESS_VIOLATION");
+}
+
+struct FaultExpectation
+{
+    std::string_view fault;
+    ExpectedOutcome (*expect)(Lane, ThreadChoice);
+};
+
+constexpr auto faultExpectations = Array {
+    FaultExpectation {"nullptr"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectNullPointer(lane); }},
+    FaultExpectation {"divide"sv,
+                      [](Lane lane, ThreadChoice) { return expectDivide(lane); }},
+    FaultExpectation {"stackoverflow"sv, expectStackOverflow},
+    FaultExpectation {"abort"sv,
+                      [](Lane lane, ThreadChoice thread)
+                      { return expectSoftwareCrash(lane, thread, "SIGABRT"); }},
+    FaultExpectation {"purevirtual"sv,
+                      [](Lane lane, ThreadChoice thread)
+                      { return expectSoftwareCrash(lane, thread, "purecall"); }},
+    FaultExpectation {"terminate"sv, expectTerminate},
+    FaultExpectation {"heapcorruption"sv, expectHeapCorruption},
+    FaultExpectation {"heapsmash"sv, expectHeapSmash},
+    FaultExpectation {"hang"sv, expectStall},
+    FaultExpectation {"spin"sv, expectStall},
+    FaultExpectation {"deadlock"sv, expectStall},
+    FaultExpectation {"fastfail"sv,
+                      [](Lane lane, ThreadChoice) { return expectFastFail(lane); }},
+    FaultExpectation {"illegalinstruction"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectIllegalInstruction(lane); }},
+    FaultExpectation {"privilegedinstruction"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectPrivilegedInstruction(lane); }},
+    FaultExpectation {"floatingpoint"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectFloatingPoint(lane); }},
+    FaultExpectation {"executenx"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectExecuteProtection(lane); }},
+    FaultExpectation {
+        "guardpage"sv,
+        [](Lane lane, ThreadChoice)
+        { return expectWindowsOnly(lane, "STATUS_GUARD_PAGE_VIOLATION"); }},
+    FaultExpectation {"inpageerror"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectInPageError(lane); }},
+    FaultExpectation {"buserror"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectMacOnly(lane, "EXC_BAD_ACCESS"); }},
+    FaultExpectation {"guardedfd"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectMacOnly(lane, "EXC_GUARD"); }},
+    FaultExpectation {"sigsys"sv,
+                      [](Lane lane, ThreadChoice)
+                      { return expectBadSystemCall(lane); }},
+};
+
+ExpectedOutcome expectOutcome(const FaultExpectation& expectation,
+                              ThreadChoice thread,
+                              Lane lane)
 {
     if (lane == Lane::linux)
         return notAvailable("no crash reporter on Linux");
 
-    if (fault == "nullptr")
-    {
-        if (isMac(lane))
-            return reportedThroughMach(lane, "EXC_BAD_ACCESS");
-
-        return reported(lane, "EXCEPTION_ACCESS_VIOLATION");
-    }
-
-    if (fault == "divide")
-        return expectDivide(lane);
-
-    if (fault == "stackoverflow")
-        return expectStackOverflow(lane, thread);
-
-    if (fault == "abort")
-        return expectSoftwareCrash(lane, thread, "SIGABRT");
-
-    if (fault == "purevirtual")
-        return expectSoftwareCrash(lane, thread, "purecall");
-
-    if (fault == "terminate")
-        return expectTerminate(lane, thread);
-
-    if (fault == "heapcorruption")
-        return expectHeapCorruption(lane, thread);
-
-    if (fault == "heapsmash")
-        return expectHeapSmash(lane, thread);
-
-    if (fault == "hang" || fault == "spin" || fault == "deadlock")
-        return expectStall(lane, thread);
-
-    if (fault == "fastfail")
-        return expectFastFail(lane);
-
-    if (fault == "illegalinstruction")
-        return expectIllegalInstruction(lane);
-
-    if (fault == "privilegedinstruction")
-        return expectPrivilegedInstruction(lane);
-
-    if (fault == "floatingpoint")
-        return expectFloatingPoint(lane);
-
-    if (fault == "executenx")
-        return expectExecuteProtection(lane);
-
-    if (fault == "guardpage")
-        return expectWindowsOnly(lane, "STATUS_GUARD_PAGE_VIOLATION");
-
-    if (fault == "inpageerror")
-        return expectInPageError(lane);
-
-    if (fault == "buserror")
-        return expectMacOnly(lane, "EXC_BAD_ACCESS");
-
-    if (fault == "guardedfd")
-        return expectMacOnly(lane, "EXC_GUARD");
-
-    if (fault == "sigsys")
-        return expectBadSystemCall(lane);
-
-    return notAvailable("not in the matrix");
+    return expectation.expect(lane, thread);
 }
-
-constexpr auto matrixFaults = Array {
-    "nullptr"sv,
-    "divide"sv,
-    "stackoverflow"sv,
-    "abort"sv,
-    "purevirtual"sv,
-    "terminate"sv,
-    "heapcorruption"sv,
-    "heapsmash"sv,
-    "hang"sv,
-    "spin"sv,
-    "deadlock"sv,
-    "fastfail"sv,
-    "illegalinstruction"sv,
-    "privilegedinstruction"sv,
-    "floatingpoint"sv,
-    "executenx"sv,
-    "guardpage"sv,
-    "inpageerror"sv,
-    "buserror"sv,
-    "guardedfd"sv,
-    "sigsys"sv,
-};
 
 Vector<MatrixCell> makeCrashMatrix()
 {
@@ -390,16 +371,28 @@ Vector<MatrixCell> makeCrashMatrix()
 
     for (auto lane: listLanes())
     {
-        for (auto fault: matrixFaults)
+        for (const auto& expectation: faultExpectations)
         {
             for (auto thread: {ThreadChoice::main, ThreadChoice::background})
-                cells.add({fault, thread, lane, expectOutcome(fault, thread, lane)});
+            {
+                cells.add({expectation.fault,
+                           thread,
+                           lane,
+                           expectOutcome(expectation, thread, lane)});
+            }
         }
     }
 
     return cells;
 }
 
+bool isCellFor(const MatrixCell& cell,
+               std::string_view fault,
+               ThreadChoice thread,
+               Lane lane)
+{
+    return cell.fault == fault && cell.thread == thread && cell.lane == lane;
+}
 } // namespace
 
 const Vector<Lane>& listLanes()
@@ -456,7 +449,7 @@ std::optional<ExpectedOutcome>
 {
     for (const auto& cell: getCrashMatrix())
     {
-        if (cell.fault == fault && cell.thread == thread && cell.lane == lane)
+        if (isCellFor(cell, fault, thread, lane))
             return cell.outcome;
     }
 

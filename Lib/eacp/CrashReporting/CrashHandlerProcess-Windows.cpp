@@ -230,6 +230,23 @@ STACKFRAME64 makeFirstStackFrame(const CONTEXT& context)
     return frame;
 }
 
+bool walkToNextFrame(HANDLE process,
+                     HANDLE thread,
+                     STACKFRAME64& stackFrame,
+                     CONTEXT& context)
+{
+    return ::StackWalk64(stackWalkMachine,
+                         process,
+                         thread,
+                         &stackFrame,
+                         &context,
+                         nullptr,
+                         ::SymFunctionTableAccess64,
+                         ::SymGetModuleBase64,
+                         nullptr)
+           && stackFrame.AddrPC.Offset != 0;
+}
+
 // Within SymInitializeW, which the walk's function-table lookups need.
 Vector<std::uint64_t>
     walkThreadAddresses(HANDLE process, HANDLE thread, CONTEXT context)
@@ -238,16 +255,7 @@ Vector<std::uint64_t>
     auto stackFrame = makeFirstStackFrame(context);
 
     while (addresses.size() < static_cast<int>(maxCrashFrames)
-           && ::StackWalk64(stackWalkMachine,
-                            process,
-                            thread,
-                            &stackFrame,
-                            &context,
-                            nullptr,
-                            ::SymFunctionTableAccess64,
-                            ::SymGetModuleBase64,
-                            nullptr)
-           && stackFrame.AddrPC.Offset != 0)
+           && walkToNextFrame(process, thread, stackFrame, context))
         addresses.add(stackFrame.AddrPC.Offset);
 
     return addresses;
@@ -460,6 +468,30 @@ bool isDebuggerAttachedTo(HANDLE process)
     return ::CheckRemoteDebuggerPresent(process, &attached) && attached;
 }
 
+Vector<Vector<StackFrame>> sampleStalledThreads(SharedHangInfo& hang,
+                                                HANDLE appProcess,
+                                                const Vector<NewStall>& stalls)
+{
+    auto sampledFrames = Vector<Vector<StackFrame>> {};
+
+    for (const auto& stall: stalls)
+    {
+        const auto& thread = hang.threads[stall.slot];
+        auto frames = sampleWatchedThread(appProcess, thread.threadId);
+
+        if (!frames || !isSameWatchedThread(thread, stall))
+            continue;
+
+        auto& stalled = hang.stalled[static_cast<std::size_t>(sampledFrames.size())];
+        stalled.threadId = thread.threadId;
+        stalled.name = thread.name;
+        stalled.durationMilliseconds = stall.durationMilliseconds;
+        sampledFrames.add(std::move(*frames));
+    }
+
+    return sampledFrames;
+}
+
 // The app keeps running: the report is written and handed over, and the
 // handler goes back to waiting.
 void checkForHang(const ReportDatabase& database,
@@ -474,22 +506,7 @@ void checkForHang(const ReportDatabase& database,
     if (stalls.empty() || isDebuggerAttachedTo(connection.appProcess))
         return;
 
-    auto sampledFrames = Vector<Vector<StackFrame>> {};
-
-    for (const auto& stall: stalls)
-    {
-        const auto& thread = hang.threads[stall.slot];
-        auto frames = sampleWatchedThread(connection.appProcess, thread.threadId);
-
-        if (!frames || !isSameWatchedThread(thread, stall))
-            continue;
-
-        auto& stalled = hang.stalled[static_cast<std::size_t>(sampledFrames.size())];
-        stalled.threadId = thread.threadId;
-        stalled.name = thread.name;
-        stalled.durationMilliseconds = stall.durationMilliseconds;
-        sampledFrames.add(std::move(*frames));
-    }
+    auto sampledFrames = sampleStalledThreads(hang, connection.appProcess, stalls);
 
     if (sampledFrames.empty())
         return;
