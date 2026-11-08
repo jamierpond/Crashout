@@ -328,23 +328,16 @@ std::optional<int> runThreadStackProbe(std::string_view probe)
     if (probe == "smallStack")
         return runSmallStackThreadCheck();
 
+    if (probe == "overflowLargeFrames")
+        return overflowAnAppThreadWithLargeFrames();
+
     return std::nullopt;
 }
-} // namespace
 
-bool isCrashingProcessCommandLine(int argc, char* argv[])
+void addCrashingProcessOptions(Args::Parser& cli,
+                               CrashingProcessSettings& settings,
+                               bool& isCrashingProcess)
 {
-    return std::ranges::any_of(Span {argv, argc},
-                               [](const char* argument)
-                               { return argument == crashingProcessFlag; });
-}
-
-int runCrashingProcess()
-{
-    auto settings = CrashingProcessSettings {};
-    auto isCrashingProcess = false;
-    auto cli = Args::Parser {"CrashReportingTests --crashing-process",
-                             "Starts the crash reporter and crashes, on purpose."};
     cli.flag(std::string {crashingProcessFlag}, isCrashingProcess, "this mode");
     cli.option("--crash", settings.fault, "the fault to raise");
     cli.option("--thread", settings.threadName, "main or background");
@@ -391,13 +384,32 @@ int runCrashingProcess()
                "100 live threads), check (which threads have a stack for "
                "overflow reports), overflow (overflow a new std::thread) or "
                "smallStack (whether a Windows thread with a 128 KB stack gets a "
-               "stack for overflow reports, and survives using 64 KB of it)");
+               "stack for overflow reports, and survives using 64 KB of it) or "
+               "overflowLargeFrames (Windows: overflow a 1 MB thread in 3 KB "
+               "frames)");
     cli.option("--crash-in-library",
                settings.libraryFunction,
                "the function to call in the crashing library, loaded at runtime");
     cli.flag("--without-crash-reporting",
              settings.skipsCrashReporting,
              "run the probe without start()");
+}
+} // namespace
+
+bool isCrashingProcessCommandLine(int argc, char* argv[])
+{
+    return std::ranges::any_of(Span {argv, argc},
+                               [](const char* argument)
+                               { return argument == crashingProcessFlag; });
+}
+
+int runCrashingProcess()
+{
+    auto settings = CrashingProcessSettings {};
+    auto isCrashingProcess = false;
+    auto cli = Args::Parser {"CrashReportingTests --crashing-process",
+                             "Starts the crash reporter and crashes, on purpose."};
+    addCrashingProcessOptions(cli, settings, isCrashingProcess);
 
     if (auto code = cli.exitCodeFor(cli.parse()))
         return *code;

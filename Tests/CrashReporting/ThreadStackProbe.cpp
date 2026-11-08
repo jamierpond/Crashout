@@ -34,9 +34,11 @@ constexpr auto p99Fraction = 0.99;
 constexpr auto bytesPerKibibyte = 1024.0;
 
 #if defined(_WIN32)
-constexpr auto stackOverflowReserveBytes = ULONG {64 * 1024};
+constexpr auto stackOverflowReserveBytes = ULONG {8 * 1024};
 constexpr auto smallThreadStackReserveBytes = SIZE_T {128 * 1024};
 constexpr auto touchedStackBytes = 64 * 1024;
+constexpr auto appThreadStackBytes = SIZE_T {1024 * 1024};
+constexpr auto largeFrameBytes = 3 * 1024;
 constexpr auto pageBytes = 4096;
 #endif
 
@@ -121,6 +123,25 @@ DWORD WINAPI checkStackAndTouchMostOfIt(LPVOID hasStackResult)
         touched[offset] = 1;
 
     return 0;
+}
+
+volatile bool shouldKeepRecursing = true;
+
+// Under a page, so no __chkstk probe: the frame lands deep in the guard page.
+__declspec(noinline) int recurseWithLargeFrames(int depth)
+{
+    volatile char frame[largeFrameBytes];
+    frame[0] = static_cast<char>(depth);
+
+    if (!shouldKeepRecursing)
+        return frame[0];
+
+    return recurseWithLargeFrames(depth + 1) + frame[0];
+}
+
+DWORD WINAPI overflowWithLargeFrames(LPVOID)
+{
+    return static_cast<DWORD>(recurseWithLargeFrames(0));
 }
 #endif
 } // namespace
@@ -216,6 +237,21 @@ int overflowANewStdThread()
     auto thread = std::thread {
         [] { Faults::triggerFault("stackoverflow", Faults::ThreadChoice::main); }};
     thread.join();
+    return 0;
+}
+// The tightest overflow measured for the Windows reserve.
+int overflowAnAppThreadWithLargeFrames()
+{
+#if defined(_WIN32)
+    auto thread = ::CreateThread(nullptr,
+                                 appThreadStackBytes,
+                                 &overflowWithLargeFrames,
+                                 nullptr,
+                                 STACK_SIZE_PARAM_IS_A_RESERVATION,
+                                 nullptr);
+    ::WaitForSingleObject(thread, INFINITE);
+    ::CloseHandle(thread);
+#endif
     return 0;
 }
 } // namespace eacp::CrashReporting::Tests
