@@ -10,6 +10,8 @@
 
 #include <NanoTest/NanoTest.h>
 
+#include <algorithm>
+
 using namespace nano;
 using namespace eacp;
 using namespace eacp::CrashReporting;
@@ -22,6 +24,13 @@ constexpr auto startingThreadHasStack = std::string_view {"starting thread: 1"};
 constexpr auto startingThreadHasNoStack = std::string_view {"starting thread: 0"};
 constexpr auto newThreadHasStack = std::string_view {"new thread: 1"};
 constexpr auto newThreadHasNoStack = std::string_view {"new thread: 0"};
+constexpr auto smallStackThreadHasNoStack =
+    std::string_view {"small stack thread: 0"};
+constexpr auto overflowReason = std::string_view {"EXCEPTION_STACK_OVERFLOW"};
+constexpr auto largeFrameSymbol = std::string_view {"recurseWithLargeFrames"};
+constexpr auto minimumLargeFrameCount = 100;
+constexpr auto smallStackThreadSurvived =
+    std::string_view {"small stack thread survived"};
 
 Processes::ProcessOptions makeThreadStackProbeOptions(std::string_view probe,
                                                       std::string_view reporting,
@@ -79,6 +88,13 @@ bool contains(const std::string& text, std::string_view wanted)
     return text.find(wanted) != std::string::npos;
 }
 
+long countFramesNamed(const CrashReport& report, std::string_view symbol)
+{
+    return std::ranges::count_if(report.crashingThread.frames,
+                                 [&](const StackFrame& frame)
+                                 { return contains(frame.symbol, symbol); });
+}
+
 auto tOffInstallsNothing = test("StackOverflow/offInstallsNothing") = []
 {
     auto output = checkStackOverflowStacks("off");
@@ -98,6 +114,43 @@ auto tEveryThread = test("StackOverflow/everyThreadCoversARawStdThread") = []
     auto output = checkStackOverflowStacks("everyThread");
     check(contains(output, startingThreadHasStack));
     check(contains(output, newThreadHasStack));
+};
+
+auto tSmallStackKeepsItsStack =
+    test("StackOverflow/everyThreadLeavesASmallStackThreadItsWholeStack") = []
+{
+    if (!Platform::isWindows())
+        return;
+
+    check(contains(checkStackOverflowStacks("everyThread"), newThreadHasStack));
+
+    auto database = TemporaryFile {};
+    auto output =
+        runStackOverflowProbe("smallStack", "everyThread", database.path()).output;
+    check(contains(output, smallStackThreadHasNoStack));
+    check(contains(output, smallStackThreadSurvived));
+};
+
+auto tLargeFramesReportCompletely =
+    test("StackOverflow/everyThreadReportsAnOverflowInLargeFramesCompletely") = []
+{
+    if (!Platform::isWindows())
+        return;
+
+    auto database = TemporaryFile {};
+    runStackOverflowProbe("overflowLargeFrames", "everyThread", database.path());
+    check(hasOverflowReport(database.path()));
+
+    auto reports = ReportDatabase {database.path()}.readPendingReports();
+    check(reports.size() == 1);
+
+    if (reports.empty())
+        return;
+
+    const auto& report = reports[0];
+    check(report.reason == overflowReason);
+    check(Files::isFile(report.minidumpPath));
+    check(countFramesNamed(report, largeFrameSymbol) >= minimumLargeFrameCount);
 };
 
 auto tEveryThreadReports =
