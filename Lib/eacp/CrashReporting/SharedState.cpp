@@ -72,6 +72,17 @@ void copyBoundedText(char* destination, std::size_t capacity, std::string_view t
     destination[length] = '\0';
 }
 
+void appendBoundedText(BoundedText<maxCrashMessageLength>& destination,
+                       std::size_t& length,
+                       std::string_view text)
+{
+    auto available = destination.size() - 1 - length;
+    auto count = std::min(text.size(), available);
+    std::copy_n(text.data(), count, destination.data() + length);
+    length += count;
+    destination[length] = '\0';
+}
+
 std::string_view readBoundedText(const char* source, std::size_t capacity)
 {
     return {source, strnlen(source, capacity)};

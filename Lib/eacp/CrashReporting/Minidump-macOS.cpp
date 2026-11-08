@@ -378,17 +378,30 @@ void appendThreadEntry(MinidumpBuffer& buffer,
     buffer.appendLocation(blobs.context);
 }
 
-Location appendThreadList(MinidumpBuffer& buffer,
-                          const MinidumpContents& contents,
-                          const Vector<ThreadBlobs>& blobs)
+Location appendListOverThreads(MinidumpBuffer& buffer,
+                               const MinidumpContents& contents,
+                               const Vector<ThreadBlobs>& blobs,
+                               const auto& appendEntry)
 {
     auto start = buffer.position();
     buffer.appendU32(countOf(contents.threads));
 
     for (auto index = 0; index < contents.threads.size(); ++index)
-        appendThreadEntry(buffer, contents.threads[index], blobs[index]);
+        appendEntry(contents.threads[index], blobs[index]);
 
     return {buffer.position() - start, start};
+}
+
+Location appendThreadList(MinidumpBuffer& buffer,
+                          const MinidumpContents& contents,
+                          const Vector<ThreadBlobs>& blobs)
+{
+    return appendListOverThreads(
+        buffer,
+        contents,
+        blobs,
+        [&](const MinidumpThread& thread, const ThreadBlobs& threadBlobs)
+        { appendThreadEntry(buffer, thread, threadBlobs); });
 }
 
 // The stacks again, for readers such as lldb that look memory up here.
@@ -396,14 +409,12 @@ Location appendMemoryList(MinidumpBuffer& buffer,
                           const MinidumpContents& contents,
                           const Vector<ThreadBlobs>& blobs)
 {
-    auto start = buffer.position();
-    buffer.appendU32(countOf(contents.threads));
-
-    for (auto index = 0; index < contents.threads.size(); ++index)
-        appendMemoryDescriptor(
-            buffer, contents.threads[index].stack.start, blobs[index].stack);
-
-    return {buffer.position() - start, start};
+    return appendListOverThreads(
+        buffer,
+        contents,
+        blobs,
+        [&](const MinidumpThread& thread, const ThreadBlobs& threadBlobs)
+        { appendMemoryDescriptor(buffer, thread.stack.start, threadBlobs.stack); });
 }
 
 // MDRawExceptionStream: the Mach exception as the code, its first code as
