@@ -201,17 +201,6 @@ void handleInvalidParameter(
     reportSoftwareCrash(invalidParameterReason);
 }
 
-void appendBoundedText(BoundedText<maxCrashMessageLength>& destination,
-                       std::size_t& length,
-                       std::string_view text)
-{
-    auto available = destination.size() - 1 - length;
-    auto count = std::min(text.size(), available);
-    std::copy_n(text.data(), count, destination.data() + length);
-    length += count;
-    destination[length] = '\0';
-}
-
 void recordTerminateMessage(std::string_view name, std::string_view detail)
 {
     auto& client = getWindowsCrashClient();

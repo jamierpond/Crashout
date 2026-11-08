@@ -301,6 +301,9 @@ bool isSameWatchedThread(const SharedWatchedThread& thread, const NewStall& stal
 // Async-signal-safe: copies into a fixed field without allocating.
 void copyBoundedText(char* destination, std::size_t capacity, std::string_view text);
 std::string_view readBoundedText(const char* source, std::size_t capacity);
+void appendBoundedText(BoundedText<maxCrashMessageLength>& destination,
+                       std::size_t& length,
+                       std::string_view text);
 
 template <std::size_t Capacity>
 void copyBoundedText(BoundedText<Capacity>& destination, std::string_view text)
