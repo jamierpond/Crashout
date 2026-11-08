@@ -4,6 +4,7 @@
 
 #include <array>
 #include <cstddef>
+#include <optional>
 
 // The Windows Error Reporting (WER) helper DLL. WerFault.exe, which Windows
 // runs when a process dies, loads it for a crash no in-app handler saw
@@ -87,44 +88,84 @@ bool recordCrash(const WER_RUNTIME_EXCEPTION_INFORMATION& information,
            && writeToProcess(process, registration.codeAddress, code);
 }
 
+std::optional<WerRegistration> readUnrecordedRegistration(HANDLE process,
+                                                          std::uint64_t address)
+{
+    auto registration = WerRegistration {};
+
+    if (!readFromProcess(process, address, registration))
+        return std::nullopt;
+
+    if (!isRegistrationValid(registration))
+        return std::nullopt;
+
+    if (isCrashAlreadyRecorded(process, registration))
+        return std::nullopt;
+
+    return registration;
+}
+
+struct HandlerHandles
+{
+    HANDLE handler = nullptr;
+    HANDLE crashEvent = nullptr;
+};
+
+HandlerHandles duplicateHandlerHandles(HANDLE process,
+                                       const WerRegistration& registration)
+{
+    return {duplicateFromProcess(
+                process, registration.handlerProcessHandle, SYNCHRONIZE),
+            duplicateFromProcess(
+                process, registration.crashEventHandle, EVENT_MODIFY_STATE)};
+}
+
+void closeHandlerHandles(const HandlerHandles& handles)
+{
+    for (auto handle: {handles.handler, handles.crashEvent})
+    {
+        if (handle != nullptr)
+            ::CloseHandle(handle);
+    }
+}
+
+bool isHandlerReady(const HandlerHandles& handles)
+{
+    auto isHandlerRunning =
+        handles.handler != nullptr
+        && ::WaitForSingleObject(handles.handler, 0) == WAIT_TIMEOUT;
+    return isHandlerRunning && handles.crashEvent != nullptr;
+}
+
+void waitForAppOrHandlerToEnd(HANDLE process, HANDLE handler)
+{
+    auto waitables = std::to_array<HANDLE>({process, handler});
+    ::WaitForMultipleObjects(static_cast<DWORD>(waitables.size()),
+                             waitables.data(),
+                             FALSE,
+                             handlerCaptureTimeoutMilliseconds);
+}
+
 // Waits for the app to end, not the handler: the handler ends the app once the
 // report is written, then keeps running to send it.
 bool handOverToHandler(const WER_RUNTIME_EXCEPTION_INFORMATION& information,
                        std::uint64_t registrationAddress)
 {
     auto process = information.hProcess;
-    auto registration = WerRegistration {};
+    auto registration = readUnrecordedRegistration(process, registrationAddress);
 
-    if (!readFromProcess(process, registrationAddress, registration)
-        || !isRegistrationValid(registration)
-        || isCrashAlreadyRecorded(process, registration))
+    if (!registration)
         return false;
 
-    auto handler = duplicateFromProcess(
-        process, registration.handlerProcessHandle, SYNCHRONIZE);
-    auto crashEvent = duplicateFromProcess(
-        process, registration.crashEventHandle, EVENT_MODIFY_STATE);
-    auto isHandlerRunning =
-        handler != nullptr && ::WaitForSingleObject(handler, 0) == WAIT_TIMEOUT;
-    auto handedOver = isHandlerRunning && crashEvent != nullptr
-                      && recordCrash(information, registrationAddress, registration)
-                      && ::SetEvent(crashEvent);
+    auto handles = duplicateHandlerHandles(process, *registration);
+    auto handedOver = isHandlerReady(handles)
+                      && recordCrash(information, registrationAddress, *registration)
+                      && ::SetEvent(handles.crashEvent);
 
     if (handedOver)
-    {
-        auto waitables = std::to_array<HANDLE>({process, handler});
-        ::WaitForMultipleObjects(static_cast<DWORD>(waitables.size()),
-                                 waitables.data(),
-                                 FALSE,
-                                 handlerCaptureTimeoutMilliseconds);
-    }
+        waitForAppOrHandlerToEnd(process, handles.handler);
 
-    for (auto handle: {handler, crashEvent})
-    {
-        if (handle != nullptr)
-            ::CloseHandle(handle);
-    }
-
+    closeHandlerHandles(handles);
     return handedOver;
 }
 } // namespace

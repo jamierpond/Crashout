@@ -141,8 +141,10 @@ std::optional<AppImage>
 {
     auto header = readAppValue<mach_header_64>(task, base);
 
-    if (!header || header->magic != MH_MAGIC_64
-        || header->sizeofcmds > maxLoadCommandBytes)
+    if (!header || header->magic != MH_MAGIC_64)
+        return std::nullopt;
+
+    if (header->sizeofcmds > maxLoadCommandBytes)
         return std::nullopt;
 
     auto commandBytes = sizeof(mach_header_64) + header->sizeofcmds;
@@ -248,6 +250,11 @@ bool readAppMemory(mach_port_t task,
     return result == KERN_SUCCESS && copied == destination.size();
 }
 
+bool hasReturnAddress(const std::optional<AppFrameRecord>& record)
+{
+    return record && record->returnAddress != 0;
+}
+
 // Frame records live on the stack, which grows down, so each caller's record
 // sits above the last; anything else is a broken chain and ends the walk.
 Vector<std::uint64_t> walkFramePointers(mach_port_t task,
@@ -263,7 +270,7 @@ Vector<std::uint64_t> walkFramePointers(mach_port_t task,
 
     auto frameLimit = static_cast<int>(maxFrames);
 
-    while (record && record->returnAddress != 0 && frames.size() < frameLimit)
+    while (hasReturnAddress(record) && frames.size() < frameLimit)
     {
         frames.add(record->returnAddress);
 

@@ -129,6 +129,14 @@ struct InProcessFrameReader
     }
 };
 
+bool isLinkRegisterAgain(const SharedStalledThread& stalled,
+                         const ThreadRegisters& registers,
+                         std::uint64_t returnAddress)
+{
+    return stalled.frameCount == 2 && registers.returnAddress
+           && returnAddress == *registers.returnAddress;
+}
+
 // The suspended thread's own frame-pointer chain, from its registers. Reads
 // only memory inside its stack, through `readRecord` (in this process or
 // another's), and allocates nothing, since the thread may be holding the
@@ -160,10 +168,7 @@ void walkFramePointers(SharedStalledThread& stalled,
         if (returnAddress == 0)
             break;
 
-        auto isLinkRegisterAgain = stalled.frameCount == 2 && registers.returnAddress
-                                   && returnAddress == *registers.returnAddress;
-
-        if (!isLinkRegisterAgain)
+        if (!isLinkRegisterAgain(stalled, registers, returnAddress))
             appendFrame(stalled, returnAddress);
 
         if (record->callerFramePointer <= framePointer)
@@ -187,8 +192,10 @@ bool sampleWatchedThread(const SharedWatchedThread& thread,
     auto port = static_cast<thread_act_t>(thread.samplingHandle);
     auto stack = StackBounds {thread.stackLow, thread.stackHigh};
 
-    if (port == MACH_PORT_NULL || port == ::pthread_mach_thread_np(::pthread_self())
-        || ::thread_suspend(port) != KERN_SUCCESS)
+    if (port == MACH_PORT_NULL || port == ::pthread_mach_thread_np(::pthread_self()))
+        return false;
+
+    if (::thread_suspend(port) != KERN_SUCCESS)
         return false;
 
     auto registers = readThreadRegisters(port);

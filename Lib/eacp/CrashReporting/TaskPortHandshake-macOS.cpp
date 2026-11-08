@@ -200,7 +200,10 @@ std::optional<mach_port_t> takeInheritedHandshakePort()
                                EXCEPTION_DEFAULT,
                                THREAD_STATE_NONE);
 
-    if (result != KERN_SUCCESS || count == 0 || !MACH_PORT_VALID(port))
+    if (result != KERN_SUCCESS || count == 0)
+        return std::nullopt;
+
+    if (!MACH_PORT_VALID(port))
         return std::nullopt;
 
     return port;
@@ -271,8 +274,13 @@ std::optional<PendingTaskPortRequest> sendAppTaskPortRequest()
     auto exceptionPort = allocateReceivePort();
     auto replyPort = allocateReceivePort();
 
-    if (!handshakePort || !exceptionPort || !replyPort
-        || !sendHandshakeRequest(*handshakePort, *exceptionPort, *replyPort))
+    if (!handshakePort)
+        return std::nullopt;
+
+    if (!exceptionPort || !replyPort)
+        return std::nullopt;
+
+    if (!sendHandshakeRequest(*handshakePort, *exceptionPort, *replyPort))
         return std::nullopt;
 
     ::mach_port_deallocate(::mach_task_self(), *handshakePort);

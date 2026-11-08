@@ -236,10 +236,12 @@ EACP_FAULT_NO_INLINE void deadlockWithAnotherThread()
 // The architecture's own permanently undefined instruction.
 EACP_FAULT_NO_INLINE void executeIllegalInstruction()
 {
-#if defined(_MSC_VER) && !defined(__clang__) && defined(_M_X64)
+#if defined(_MSC_VER) && !defined(__clang__)
+#if defined(_M_X64)
     __ud2();
-#elif defined(_MSC_VER) && !defined(__clang__) && defined(_M_ARM64)
+#elif defined(_M_ARM64)
     __emit(0x00000000);
+#endif
 #elif defined(__x86_64__)
     asm volatile("ud2");
 #elif defined(__aarch64__)

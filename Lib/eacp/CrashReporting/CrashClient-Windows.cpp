@@ -554,8 +554,10 @@ bool launchHandlerProcess(const HandlerLaunch& launch, SharedState&)
     client.crashEvent = createChannelEvent(launch.channelName, crashEventSuffix);
     auto readyEvent = createChannelEvent(launch.channelName, readyEventSuffix);
 
-    if (client.sharedMapping == nullptr || client.crashEvent == nullptr
-        || readyEvent == nullptr)
+    if (client.sharedMapping == nullptr)
+        return false;
+
+    if (client.crashEvent == nullptr || readyEvent == nullptr)
         return false;
 
     auto commandLine =

@@ -113,8 +113,13 @@ std::uint64_t findStallDuration(const SharedHangInfo& hang,
     auto isWaiting = thread.waitingForEvents.load(std::memory_order_acquire) != 0;
     auto threshold = hang.thresholdMilliseconds;
 
-    if (!isLive || heartbeat == 0 || isPaused || isWaiting || threshold == 0
-        || now < heartbeat)
+    auto isWatching = isLive && !isPaused && !isWaiting;
+    auto hasHeartbeatBeforeNow = heartbeat != 0 && now >= heartbeat;
+
+    if (!isWatching || !hasHeartbeatBeforeNow)
+        return 0;
+
+    if (threshold == 0)
         return 0;
 
     auto silence = now - heartbeat;
@@ -333,11 +338,16 @@ bool removeSharedEntry(SharedState& state,
     return false;
 }
 
+bool doesUserFitInFields(const User& user)
+{
+    return fitsInField(user.id, maxUserFieldLength)
+           && fitsInField(user.email, maxUserFieldLength)
+           && fitsInField(user.username, maxUserFieldLength);
+}
+
 bool writeSharedUser(SharedState& state, const User& user)
 {
-    if (!fitsInField(user.id, maxUserFieldLength)
-        || !fitsInField(user.email, maxUserFieldLength)
-        || !fitsInField(user.username, maxUserFieldLength))
+    if (!doesUserFitInFields(user))
         return false;
 
     auto write = SharedTableWrite {state};

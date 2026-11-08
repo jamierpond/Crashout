@@ -15,7 +15,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <deque>
+#include <ranges>
 
 using namespace nano;
 using namespace eacp;
@@ -73,59 +75,52 @@ void printFrames(const CrashReport& report)
         Console::printError("  " + frame.modulePath + " " + frame.symbol);
 }
 
-bool isHexDigit(char character, bool upperCase)
+#if defined(_WIN32)
+constexpr auto moduleUuidIsUpperCase = false;
+constexpr auto moduleUuidHasAgeGroup = true;
+#else
+constexpr auto moduleUuidIsUpperCase = true;
+constexpr auto moduleUuidHasAgeGroup = false;
+#endif
+
+bool isModuleUuidHexDigit(char character)
 {
-    if (character >= '0' && character <= '9')
-        return true;
+    auto byte = static_cast<unsigned char>(character);
 
-    if (upperCase)
-        return character >= 'A' && character <= 'F';
+    if (moduleUuidIsUpperCase)
+        return std::isxdigit(byte) && !std::islower(byte);
 
-    return character >= 'a' && character <= 'f';
+    return std::isxdigit(byte) && !std::isupper(byte);
 }
 
 // 8-4-4-4-12 hex digits, upper case on macOS (LC_UUID) and lower case with a
 // trailing -<age hex> on Windows (PDB GUID and age).
 bool isModuleUuidForm(std::string_view text)
 {
-#if defined(_WIN32)
-    constexpr auto upperCase = false;
-#else
-    constexpr auto upperCase = true;
-#endif
     constexpr auto groupLengths = std::to_array<std::size_t>({8, 4, 4, 4, 12});
-    auto position = std::size_t {0};
+    constexpr auto groupCount =
+        groupLengths.size() + (moduleUuidHasAgeGroup ? 1 : 0);
+    auto groups = Vector<std::string_view> {};
 
-    for (auto groupLength: groupLengths)
-    {
-        if (position > 0)
-        {
-            if (position >= text.size() || text[position] != '-')
-                return false;
-            ++position;
-        }
+    for (auto group: std::views::split(text, '-'))
+        groups.add(std::string_view {group.begin(), group.end()});
 
-        for (auto index = std::size_t {0}; index < groupLength; ++index, ++position)
-        {
-            if (position >= text.size() || !isHexDigit(text[position], upperCase))
-                return false;
-        }
-    }
-
-#if defined(_WIN32)
-    if (position + 1 >= text.size() || text[position] != '-')
+    if (groups.getSize() != groupCount)
         return false;
 
-    for (++position; position < text.size(); ++position)
+    for (auto index = std::size_t {0}; index < groupLengths.size(); ++index)
     {
-        if (!isHexDigit(text[position], upperCase))
+        if (groups[index].size() != groupLengths[index])
             return false;
     }
 
-    return true;
-#else
-    return position == text.size();
-#endif
+    return std::ranges::all_of(groups,
+                               [](std::string_view group)
+                               {
+                                   return !group.empty()
+                                          && std::ranges::all_of(
+                                              group, isModuleUuidHexDigit);
+                               });
 }
 
 bool hasCrashingProcessFrameWithModuleUuid(const CrashReport& report)
@@ -206,19 +201,13 @@ CrashReport crashTheCrashingProcess(std::string_view kind, FaultThread thread)
     return crashTheCrashingProcess(kind, thread, database);
 }
 
-Processes::ProcessOptions
-    makeHangOptions(std::string_view kind,
-                    const FilePath& database,
-                    std::string_view threshold,
-                    const Vector<std::string>& appArguments = {},
-                    FaultThread thread = FaultThread::main)
+Processes::ProcessOptions makeHangOptions(std::string_view kind,
+                                          const FilePath& database,
+                                          std::string_view threshold,
+                                          FaultThread thread = FaultThread::main)
 {
     auto arguments =
         Vector<std::string> {"--hang-threshold-ms", std::string {threshold}};
-
-    for (const auto& argument: appArguments)
-        arguments.add(argument);
-
     return makeCrashOptions(kind, thread, database, arguments);
 }
 
@@ -281,8 +270,10 @@ Vector<CrashReport> runHangFault(const Vector<std::string>& appArguments,
                                  FaultThread thread = FaultThread::main)
 {
     auto database = TemporaryFile {};
-    auto options =
-        makeHangOptions(kind, database.path(), threshold, appArguments, thread);
+    auto options = makeHangOptions(kind, database.path(), threshold, thread);
+
+    for (const auto& argument: appArguments)
+        options.arguments.add(argument);
 
     auto process = Processes::Process {options};
     check(process.launched());
