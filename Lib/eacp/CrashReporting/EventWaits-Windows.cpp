@@ -4,6 +4,7 @@
 
 #include <winternl.h>
 
+#include <optional>
 #include <vector>
 
 namespace eacp::CrashReporting::Detail
@@ -11,6 +12,8 @@ namespace eacp::CrashReporting::Detail
 namespace
 {
 constexpr auto threadStateWaiting = ULONG {5};
+constexpr auto waitReasonSuspended = ULONG {5};
+constexpr auto waitReasonSuspendedByExecutive = ULONG {12};
 constexpr auto waitReasonWindowMessages = ULONG {13};
 constexpr auto statusInfoLengthMismatch = NTSTATUS(0xC0000004L);
 constexpr auto initialSnapshotBytes = ULONG {512 * 1024};
@@ -54,13 +57,18 @@ bool isWaitingForWindowMessages(const SystemThreadInformation& thread)
     return thread.threadState == threadStateWaiting
            && thread.waitReason == waitReasonWindowMessages;
 }
-} // namespace
 
-// GetMessage, WaitMessage and MsgWaitForMultipleObjects all park the thread in
-// the kernel with this wait reason; a lock or Sleep never does.
-bool isThreadWaitingForWindowMessages(std::uint64_t threadId)
+bool isSuspended(const SystemThreadInformation& thread)
 {
-    auto snapshot = takeProcessSnapshot();
+    auto isSuspendReason = thread.waitReason == waitReasonSuspended
+                           || thread.waitReason == waitReasonSuspendedByExecutive;
+    return thread.threadState == threadStateWaiting && isSuspendReason;
+}
+
+std::optional<SystemThreadInformation>
+    findThreadInSnapshot(const std::vector<std::byte>& snapshot,
+                         std::uint64_t threadId)
+{
     auto offset = std::size_t {0};
 
     while (offset < snapshot.size())
@@ -76,7 +84,7 @@ bool isThreadWaitingForWindowMessages(std::uint64_t threadId)
                 threads[index].clientId.UniqueThread);
 
             if (id == threadId)
-                return isWaitingForWindowMessages(threads[index]);
+                return threads[index];
         }
 
         if (process->NextEntryOffset == 0)
@@ -85,19 +93,47 @@ bool isThreadWaitingForWindowMessages(std::uint64_t threadId)
         offset += process->NextEntryOffset;
     }
 
-    return false;
+    return std::nullopt;
 }
 
-void heartbeatMainThreadWhileWaitingForMessages(SharedHangInfo& hang,
-                                                std::uint64_t now)
+// A suspended thread was frozen by the OS (efficiency mode, a suspended
+// package, a debugger); only the main thread idles in a message wait.
+bool isIdleOrFrozen(const SystemThreadInformation& thread, std::size_t slot)
 {
-    auto& thread = hang.threads[mainThreadSlot];
+    if (isSuspended(thread))
+        return true;
+
+    return slot == mainThreadSlot && isWaitingForWindowMessages(thread);
+}
+} // namespace
+
+// GetMessage, WaitMessage and MsgWaitForMultipleObjects all park the thread in
+// the kernel with this wait reason; a lock or Sleep never does.
+bool isThreadWaitingForWindowMessages(std::uint64_t threadId)
+{
+    auto thread = findThreadInSnapshot(takeProcessSnapshot(), threadId);
+    return thread && isWaitingForWindowMessages(*thread);
+}
+
+void heartbeatWatchedThreadsThatAreNotHung(SharedHangInfo& hang, std::uint64_t now)
+{
     constexpr auto noGrace = std::uint64_t {0};
+    auto snapshot = std::vector<std::byte> {};
 
-    if (findStallDuration(hang, thread, now, noGrace) == 0)
-        return;
+    for (auto slot = std::size_t {0}; slot < maxWatchedThreads; ++slot)
+    {
+        auto& watched = hang.threads[slot];
 
-    if (isThreadWaitingForWindowMessages(thread.threadId))
-        sendWatchedThreadHeartbeat(thread);
+        if (findStallDuration(hang, watched, now, noGrace) == 0)
+            continue;
+
+        if (snapshot.empty())
+            snapshot = takeProcessSnapshot();
+
+        auto thread = findThreadInSnapshot(snapshot, watched.threadId);
+
+        if (thread && isIdleOrFrozen(*thread, slot))
+            sendWatchedThreadHeartbeat(watched);
+    }
 }
 } // namespace eacp::CrashReporting::Detail

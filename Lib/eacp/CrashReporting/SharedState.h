@@ -277,6 +277,7 @@ struct NewStall
     std::size_t slot = 0;
     std::uint32_t generation = 0;
     std::uint64_t durationMilliseconds = 0;
+    std::uint64_t lastHeartbeatMilliseconds = 0;
 };
 
 // What a watcher remembers between checks: the heartbeat each slot was silent
@@ -297,6 +298,10 @@ Vector<NewStall> takeNewStalls(const SharedHangInfo& hang,
 
 // Whether the slot still holds the thread the stall was taken from.
 bool isSameWatchedThread(const SharedWatchedThread& thread, const NewStall& stall);
+
+// Whether the slot still holds that thread and it has sent no heartbeat since:
+// a process the OS froze and then thawed is running again, not hung.
+bool isStillStalled(const SharedWatchedThread& thread, const NewStall& stall);
 
 // Async-signal-safe: copies into a fixed field without allocating.
 void copyBoundedText(char* destination, std::size_t capacity, std::string_view text);

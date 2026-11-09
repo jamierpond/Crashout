@@ -74,6 +74,23 @@ auto tSilentThreadIsReportedOnce =
     check(takeNewStalls(state->hang, tracker, nextHeartbeat + overdue).size() == 1);
 };
 
+// The handler samples before it writes, which loads symbols for seconds; a
+// process the OS froze and then thawed heartbeats meanwhile and is not hung.
+auto tThreadThatHeartbeatsWhileSampledIsNotStillStalled = test(
+    "CrashReport/workerHangThreadThatHeartbeatsWhileSampledIsNotStillStalled") = []
+{
+    auto state = createWatchedState();
+    auto& thread = claimAt(state->hang, "encoder", heartbeatTime);
+    auto tracker = StallTracker {};
+    auto stalls = takeNewStalls(state->hang, tracker, heartbeatTime + overdue);
+
+    check(stalls.size() == 1);
+    check(stalls.size() == 1 && isStillStalled(thread, stalls[0]));
+
+    thread.lastHeartbeatMilliseconds = heartbeatTime + overdue;
+    check(stalls.size() == 1 && !isStillStalled(thread, stalls[0]));
+};
+
 auto tThreadWaitingForEventsIsNotReported =
     test("CrashReport/workerHangThreadWaitingForEventsIsNotReported") = []
 {
