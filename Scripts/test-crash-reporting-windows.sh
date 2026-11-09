@@ -6,11 +6,15 @@ host=$1
 arch=$2
 branch=${3:-$(git rev-parse --abbrev-ref HEAD)}
 repository=https://github.com/jamierpond/Crashout.git
-checkout='$HOME\projects\Crashout'
+checkout='$env:USERPROFILE\projects\Crashout'
 
-ssh "$host" "powershell -NoProfile -Command \"
-  if (!(Test-Path $checkout)) { git clone $repository $checkout }
-  git -C $checkout fetch origin $branch
-  git -C $checkout checkout -B $branch FETCH_HEAD
-  cmd /c $checkout\\Scripts\\test-crash-reporting-windows.bat $arch
-  exit \\\$LASTEXITCODE\""
+steps=(
+    "if (!(Test-Path $checkout)) { git clone -q $repository $checkout }"
+    "git -C $checkout fetch -q origin $branch"
+    "git -C $checkout checkout -q -B $branch FETCH_HEAD"
+    "cmd /c $checkout\\Scripts\\test-crash-reporting-windows.bat $arch"
+    "exit \$LASTEXITCODE"
+)
+script=$(IFS=';'; echo "${steps[*]}")
+encoded=$(printf '%s' "$script" | iconv -t UTF-16LE | base64 | tr -d '\n')
+ssh "$host" "powershell -NoProfile -EncodedCommand $encoded"
