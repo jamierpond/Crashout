@@ -1,3 +1,8 @@
+# A project that already added eacp keeps its own eacp and its options.
+if (TARGET eacp-core)
+    return()
+endif ()
+
 include(CPM)
 
 # eacp jp/crashout-eacp-base: #196 merged with #197. Pin develop once both merge.
