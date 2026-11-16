@@ -99,10 +99,8 @@ jobs:
             ~/Library/Logs/DiagnosticReports/*.crash
           if-no-files-found: warn
 
-  # A manual run has no pull request or earlier commit to compare with.
   codehealth:
     name: Code Health
-    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v6
