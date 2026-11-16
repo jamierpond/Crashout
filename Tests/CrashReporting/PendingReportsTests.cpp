@@ -66,7 +66,7 @@ constexpr auto handUncleanProcessId = std::uint64_t {4242};
 } // namespace
 
 Processes::ProcessResult runProbe(const FilePath& database,
-                                  Vector<std::string> extraArguments = {})
+                                  const Vector<std::string>& extraArguments = {})
 {
     auto options = Processes::ProcessOptions {};
     options.executable = EACP_PENDING_REPORTS_PROBE;

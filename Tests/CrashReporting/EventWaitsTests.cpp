@@ -10,7 +10,7 @@
 
 #if defined(__APPLE__)
 #include <CoreFoundation/CoreFoundation.h>
-#include <time.h>
+#include <ctime>
 #else
 #include <eacp/Core/Utils/WinInclude.h>
 #endif

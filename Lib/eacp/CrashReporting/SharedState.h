@@ -143,15 +143,15 @@ struct SharedWatchedThread
     // idle, not hung, however long since its last heartbeat.
     std::atomic<std::uint32_t> waitingForEvents;
 
-    std::uint64_t threadId;
-    BoundedText<maxThreadNameLength> name;
+    std::uint64_t threadId = 0;
+    BoundedText<maxThreadNameLength> name {};
 
     // What the in-app watchdog suspends and walks the thread with (macOS:
     // its Mach port and stack); unused on Windows, where the handler opens
     // the thread by id.
-    std::uint64_t samplingHandle;
-    std::uint64_t stackLow;
-    std::uint64_t stackHigh;
+    std::uint64_t samplingHandle = 0;
+    std::uint64_t stackLow = 0;
+    std::uint64_t stackHigh = 0;
 };
 
 // A watched thread caught silent, as the sampler wrote it for the handler.
@@ -170,39 +170,39 @@ struct SharedStalledThread
 struct SharedHangInfo
 {
     // 0 is detection off, for every thread.
-    std::uint64_t thresholdMilliseconds;
-    std::uint64_t pollIntervalMilliseconds;
+    std::uint64_t thresholdMilliseconds = 0;
+    std::uint64_t pollIntervalMilliseconds = 0;
 
     std::array<SharedWatchedThread, maxWatchedThreads> threads;
 
     // Written by whoever sampled the hang, before the handler is told.
-    std::uint32_t stalledCount;
-    std::array<SharedStalledThread, maxWatchedThreads> stalled;
+    std::uint32_t stalledCount = 0;
+    std::array<SharedStalledThread, maxWatchedThreads> stalled {};
 };
 
 struct SharedState
 {
-    std::uint32_t magic;
-    std::uint32_t version;
-    std::uint64_t appProcessId;
+    std::uint32_t magic = 0;
+    std::uint32_t version = 0;
+    std::uint64_t appProcessId = 0;
 
     // Odd while the app is writing the tables below, so a reader that sees an
     // odd count, or a different count after reading, reads again.
     std::atomic<std::uint32_t> tableSequence;
 
-    SharedKeyValueTable metadata;
-    SharedKeyValueTable tags;
-    SharedKeyValueTable extra;
-    SharedUser user;
-    SharedBreadcrumbRing breadcrumbs;
+    SharedKeyValueTable metadata {};
+    SharedKeyValueTable tags {};
+    SharedKeyValueTable extra {};
+    SharedUser user {};
+    SharedBreadcrumbRing breadcrumbs {};
 
-    std::uint32_t attachmentCount;
-    std::array<BoundedText<maxAttachmentPathLength>, maxAttachments> attachments;
+    std::uint32_t attachmentCount = 0;
+    std::array<BoundedText<maxAttachmentPathLength>, maxAttachments> attachments {};
 
     // Set by stop() before it wakes the handler, which then exits cleanly.
     std::atomic<std::uint32_t> stopRequested;
 
-    SharedCrashInfo crash;
+    SharedCrashInfo crash {};
     SharedHangInfo hang;
 };
 

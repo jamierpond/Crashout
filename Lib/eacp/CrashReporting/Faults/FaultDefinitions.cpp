@@ -349,7 +349,7 @@ EACP_FAULT_NO_INLINE void readPastTruncatedMapping()
     ::unlink(path.data());
     auto pageSize = static_cast<std::size_t>(::getpagesize());
     ::ftruncate(descriptor, static_cast<off_t>(pageSize));
-    auto* mapping = static_cast<volatile char*>(
+    auto* mapping = static_cast<volatile unsigned char*>(
         ::mmap(nullptr, pageSize, PROT_READ, MAP_SHARED, descriptor, 0));
     ::ftruncate(descriptor, 0);
     divideResult = mapping[0];

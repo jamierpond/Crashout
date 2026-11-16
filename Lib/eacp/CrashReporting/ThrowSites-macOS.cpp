@@ -120,13 +120,13 @@ bool copyThrowSiteOfCurrentException(SharedCrashInfo& crash)
 // executable or library as eacp-crash-reporting; other libraries still use
 // libc++abi's.
 extern "C" void
-    __cxa_throw(void* thrownObject, std::type_info* type, void (*destructor)(void*))
+    __cxa_throw(void* thrown_exception, std::type_info* tinfo, void (*dest)(void*))
 {
     using namespace eacp::CrashReporting::Detail;
 
     if (isRecording.load(std::memory_order_relaxed))
-        recordThrowSite(thrownObject);
+        recordThrowSite(thrown_exception);
 
-    findRealThrowFunction()(thrownObject, type, destructor);
+    findRealThrowFunction()(thrown_exception, tinfo, dest);
     __builtin_unreachable();
 }

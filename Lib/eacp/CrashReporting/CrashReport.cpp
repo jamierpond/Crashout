@@ -13,6 +13,7 @@ namespace
 {
 constexpr auto hexPrefix = std::string_view {"0x"};
 constexpr auto hexBase = 16;
+constexpr auto hexAddressBufferSize = 32;
 constexpr auto reportIndent = 2;
 
 struct CaptureSourceName
@@ -237,9 +238,9 @@ std::optional<CrashReport> CrashReport::fromJSON(std::string_view text)
 
 std::string formatHexAddress(std::uint64_t address)
 {
-    auto digits = Array<char, 32> {};
+    auto digits = Array<char, hexAddressBufferSize> {};
     auto [end, error] = std::to_chars(
-        digits.data(), digits.data() + digits.size(), address, hexBase);
+        digits.data(), digits.data() + hexAddressBufferSize, address, hexBase);
 
     return std::string {hexPrefix} + std::string {digits.data(), end};
 }

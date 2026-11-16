@@ -3,7 +3,7 @@
 #if defined(_WIN32)
 #include <eacp/Core/Utils/WinInclude.h>
 #else
-#include <time.h>
+#include <ctime>
 #endif
 
 #include <algorithm>

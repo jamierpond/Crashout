@@ -225,7 +225,12 @@ struct WrappedLabel final : UI::Component
 
         for (const auto& word: Strings::split(text, ' '))
         {
-            auto candidate = current.empty() ? word : current + " " + word;
+            auto candidate = current;
+
+            if (!candidate.empty())
+                candidate += ' ';
+
+            candidate += word;
 
             if (!current.empty() && g.measureText(candidate) > getLocalBounds().w)
             {
@@ -317,7 +322,8 @@ struct CardGrid final : UI::Component
     float getHeightFor(int cardCount) const
     {
         auto rowCount = (cardCount + gridColumns - 1) / gridColumns;
-        return rowCount * cardHeight + (rowCount - 1) * cardGap;
+        auto rowCountAsFloat = static_cast<float>(rowCount);
+        return rowCountAsFloat * cardHeight + (rowCountAsFloat - 1.f) * cardGap;
     }
 
     void layOutCards(float width)
@@ -327,8 +333,10 @@ struct CardGrid final : UI::Component
 
         for (auto index = 0; index < cards.size(); ++index)
         {
-            auto column = index % gridColumns;
-            auto row = index / gridColumns;
+            auto columnIndex = index % gridColumns;
+            auto rowIndex = index / gridColumns;
+            auto column = static_cast<float>(columnIndex);
+            auto row = static_cast<float>(rowIndex);
             cards[index]->setBounds({column * (cardWidth + cardGap),
                                      row * (cardHeight + cardGap),
                                      cardWidth,
@@ -346,7 +354,7 @@ struct CardGrid final : UI::Component
 
 struct FaultButtons final : UI::Component
 {
-    explicit FaultButtons(FilePath databaseDirectoryToShow)
+    explicit FaultButtons(const FilePath& databaseDirectoryToShow)
         : database("Reports go to " + databaseDirectoryToShow.str())
     {
         title.setFontSize(titleFontSize);

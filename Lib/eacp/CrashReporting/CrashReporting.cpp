@@ -145,7 +145,7 @@ auto writeToSharedState(WriteFunction write)
 }
 
 template <typename HandlerCall>
-void scheduleHandlerCall(std::string_view name, HandlerCall call)
+void scheduleHandlerCall(std::string_view name, const HandlerCall& call)
 {
     Threads::callAsync(
         [name, call]
