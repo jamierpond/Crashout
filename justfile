@@ -27,3 +27,7 @@ tidy: build
 [unix]
 format:
     git ls-files '*.h' '*.cpp' '*.mm' | xargs clang-format -i
+
+[doc('Delete the build directory')]
+clean:
+    cmake -E rm -rf {{build_dir}}
