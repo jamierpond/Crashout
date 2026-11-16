@@ -1,5 +1,7 @@
 # Crashout dev commands. Requires just, cmake, ninja and a C++20 toolchain.
 
+set windows-shell := ["cmd.exe", "/c"]
+
 build_dir := "build"
 build_type := "RelWithDebInfo"
 
