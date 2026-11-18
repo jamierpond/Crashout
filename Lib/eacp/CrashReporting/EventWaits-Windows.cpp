@@ -11,9 +11,10 @@ namespace eacp::CrashReporting::Detail
 {
 namespace
 {
+// KTHREAD_STATE and KWAIT_REASON values, as wdm.h numbers them.
 constexpr auto threadStateWaiting = ULONG {5};
 constexpr auto waitReasonSuspended = ULONG {5};
-constexpr auto waitReasonSuspendedByExecutive = ULONG {12};
+constexpr auto waitReasonSuspendedInKernel = ULONG {12};
 constexpr auto waitReasonWindowMessages = ULONG {13};
 constexpr auto statusInfoLengthMismatch = NTSTATUS(0xC0000004L);
 constexpr auto initialSnapshotBytes = ULONG {512 * 1024};
@@ -61,7 +62,7 @@ bool isWaitingForWindowMessages(const SystemThreadInformation& thread)
 bool isSuspended(const SystemThreadInformation& thread)
 {
     auto isSuspendReason = thread.waitReason == waitReasonSuspended
-                           || thread.waitReason == waitReasonSuspendedByExecutive;
+                           || thread.waitReason == waitReasonSuspendedInKernel;
     return thread.threadState == threadStateWaiting && isSuspendReason;
 }
 
@@ -96,8 +97,8 @@ std::optional<SystemThreadInformation>
     return std::nullopt;
 }
 
-// A suspended thread was frozen by the OS (efficiency mode, a suspended
-// package, a debugger); only the main thread idles in a message wait.
+// A suspended thread was frozen from outside the app (NtSuspendProcess, a
+// debugger, a suspended package); only the main thread idles in a message wait.
 bool isIdleOrFrozen(const SystemThreadInformation& thread, std::size_t slot)
 {
     if (isSuspended(thread))

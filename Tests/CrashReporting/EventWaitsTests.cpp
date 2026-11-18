@@ -238,7 +238,7 @@ auto tBusyThreadIsReported = test("EventWaits/busyThreadIsReported") = []
     release = true;
 };
 
-// Efficiency mode or a suspended package freezes every thread of the app; a
+// NtSuspendProcess, a debugger or a suspended package freezes every thread; a
 // thread that is suspended is frozen, not hung, whichever slot watches it.
 struct SuspendedThread
 {

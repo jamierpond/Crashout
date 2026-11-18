@@ -468,49 +468,25 @@ bool isDebuggerAttachedTo(HANDLE process)
     return ::CheckRemoteDebuggerPresent(process, &attached) && attached;
 }
 
-struct SampledStall
-{
-    NewStall stall;
-    Vector<StackFrame> frames;
-};
-
-Vector<SampledStall> sampleStalledThreads(const SharedHangInfo& hang,
-                                          HANDLE appProcess,
-                                          const Vector<NewStall>& stalls)
-{
-    auto sampled = Vector<SampledStall> {};
-
-    for (const auto& stall: stalls)
-    {
-        auto frames =
-            sampleWatchedThread(appProcess, hang.threads[stall.slot].threadId);
-
-        if (frames)
-            sampled.add({stall, std::move(*frames)});
-    }
-
-    return sampled;
-}
-
-// Sampling loads symbols, which can take seconds, so the heartbeats are read
-// again after it: a thread that sent one meanwhile was frozen, not hung.
-Vector<Vector<StackFrame>> keepStallsStillSilent(SharedHangInfo& hang,
-                                                 Vector<SampledStall>& sampled)
+Vector<Vector<StackFrame>> sampleStalledThreads(SharedHangInfo& hang,
+                                                HANDLE appProcess,
+                                                const Vector<NewStall>& stalls)
 {
     auto sampledFrames = Vector<Vector<StackFrame>> {};
 
-    for (auto& [stall, frames]: sampled)
+    for (const auto& stall: stalls)
     {
         const auto& thread = hang.threads[stall.slot];
+        auto frames = sampleWatchedThread(appProcess, thread.threadId);
 
-        if (!isStillStalled(thread, stall))
+        if (!frames || !isSameWatchedThread(thread, stall))
             continue;
 
         auto& stalled = hang.stalled[static_cast<std::size_t>(sampledFrames.size())];
         stalled.threadId = thread.threadId;
         stalled.name = thread.name;
         stalled.durationMilliseconds = stall.durationMilliseconds;
-        sampledFrames.add(std::move(frames));
+        sampledFrames.add(std::move(*frames));
     }
 
     return sampledFrames;
@@ -530,8 +506,7 @@ void checkForHang(const ReportDatabase& database,
     if (stalls.empty() || isDebuggerAttachedTo(connection.appProcess))
         return;
 
-    auto sampled = sampleStalledThreads(hang, connection.appProcess, stalls);
-    auto sampledFrames = keepStallsStillSilent(hang, sampled);
+    auto sampledFrames = sampleStalledThreads(hang, connection.appProcess, stalls);
 
     if (sampledFrames.empty())
         return;
