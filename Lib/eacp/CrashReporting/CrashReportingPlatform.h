@@ -91,9 +91,9 @@ void stopObservingEventWaits();
 bool isThreadWaitingForWindowMessages(std::uint64_t threadId);
 
 // The handler's Windows counterpart of the run-loop observers: a stalled main
-// thread found parked waiting for messages is idle, so it gets a heartbeat.
-void heartbeatMainThreadWhileWaitingForMessages(SharedHangInfo& hang,
-                                                std::uint64_t now);
+// thread parked waiting for messages is idle, and a stalled thread the OS
+// suspended is frozen, so either gets a heartbeat rather than a report.
+void heartbeatWatchedThreadsThatAreNotHung(SharedHangInfo& hang, std::uint64_t now);
 #endif
 
 // The calling thread's stack, symbolised in the app, its innermost
