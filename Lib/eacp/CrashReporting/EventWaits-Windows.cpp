@@ -34,6 +34,11 @@ struct SystemThreadInformation
     ULONG waitReason;
 };
 
+struct ThreadIdentifier
+{
+    std::uint64_t value;
+};
+
 std::vector<std::byte> takeProcessSnapshot()
 {
     auto snapshot = std::vector<std::byte>(initialSnapshotBytes);
@@ -68,7 +73,7 @@ bool isSuspended(const SystemThreadInformation& thread)
 
 std::optional<SystemThreadInformation>
     findThreadInSnapshot(const std::vector<std::byte>& snapshot,
-                         std::uint64_t threadId)
+                         ThreadIdentifier threadId)
 {
     auto offset = std::size_t {0};
 
@@ -84,7 +89,7 @@ std::optional<SystemThreadInformation>
             auto id = reinterpret_cast<std::uintptr_t>(
                 threads[index].clientId.UniqueThread);
 
-            if (id == threadId)
+            if (id == threadId.value)
                 return threads[index];
         }
 
@@ -113,7 +118,8 @@ bool isIdleOrFrozen(const SystemThreadInformation& thread,
 // the kernel with this wait reason; a lock or Sleep never does.
 bool isThreadWaitingForWindowMessages(std::uint64_t threadId)
 {
-    auto thread = findThreadInSnapshot(takeProcessSnapshot(), threadId);
+    auto thread =
+        findThreadInSnapshot(takeProcessSnapshot(), ThreadIdentifier {threadId});
     return thread && isWaitingForWindowMessages(*thread);
 }
 
@@ -132,7 +138,8 @@ void heartbeatWatchedThreadsThatAreNotHung(SharedHangInfo& hang, std::uint64_t n
         if (snapshot.empty())
             snapshot = takeProcessSnapshot();
 
-        auto thread = findThreadInSnapshot(snapshot, watched.threadId);
+        auto thread =
+            findThreadInSnapshot(snapshot, ThreadIdentifier {watched.threadId});
 
         if (thread && isIdleOrFrozen(*thread, hang, watched))
             sendWatchedThreadHeartbeat(watched);
