@@ -99,12 +99,13 @@ std::optional<SystemThreadInformation>
 
 // A suspended thread was frozen from outside the app (NtSuspendProcess, a
 // debugger, a suspended package); only the main thread idles in a message wait.
-bool isIdleOrFrozen(const SystemThreadInformation& thread, std::size_t slot)
+bool isIdleOrFrozen(const SystemThreadInformation& thread,
+                    const SharedHangInfo& hang,
+                    const SharedWatchedThread& watched)
 {
-    if (isSuspended(thread))
-        return true;
-
-    return slot == mainThreadSlot && isWaitingForWindowMessages(thread);
+    auto isMainThread = &watched == &hang.threads[mainThreadSlot];
+    return isSuspended(thread)
+           || (isMainThread && isWaitingForWindowMessages(thread));
 }
 } // namespace
 
@@ -133,7 +134,7 @@ void heartbeatWatchedThreadsThatAreNotHung(SharedHangInfo& hang, std::uint64_t n
 
         auto thread = findThreadInSnapshot(snapshot, watched.threadId);
 
-        if (thread && isIdleOrFrozen(*thread, slot))
+        if (thread && isIdleOrFrozen(*thread, hang, watched))
             sendWatchedThreadHeartbeat(watched);
     }
 }
