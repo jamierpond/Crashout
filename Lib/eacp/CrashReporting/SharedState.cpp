@@ -254,7 +254,7 @@ Vector<NewStall> takeNewStalls(const SharedHangInfo& hang,
         auto overdue =
             findStallDuration(hang, thread, now, hang.pollIntervalMilliseconds);
         hasOverdueStall = hasOverdueStall || overdue != 0;
-        stalls.add({slot, generation, duration});
+        stalls.add({slot, generation, duration, heartbeat});
     }
 
     if (!hasOverdueStall)
@@ -272,6 +272,14 @@ bool isSameWatchedThread(const SharedWatchedThread& thread, const NewStall& stal
 {
     return thread.status.load(std::memory_order_acquire) == watchedThreadLive
            && thread.generation.load(std::memory_order_acquire) == stall.generation;
+}
+
+bool isStillStalled(const SharedWatchedThread& thread, const NewStall& stall)
+{
+    auto heartbeat =
+        thread.lastHeartbeatMilliseconds.load(std::memory_order_acquire);
+    return isSameWatchedThread(thread, stall)
+           && heartbeat == stall.lastHeartbeatMilliseconds;
 }
 
 bool isSharedStateValid(const SharedState& state)

@@ -202,15 +202,7 @@ struct MessageLoopThread
 
 constexpr auto silenceBeforeCheck = 10 * testThreshold;
 
-bool isStallReportedAfterHandlerCheck(SharedHangInfo& hang)
-{
-    auto& watched = hang.threads[mainThreadSlot];
-    auto now = getSteadyMilliseconds();
-    watched.lastHeartbeatMilliseconds = now - silenceBeforeCheck;
-    heartbeatMainThreadWhileWaitingForMessages(hang, now);
-    auto tracker = StallTracker {};
-    return !takeNewStalls(hang, tracker, getSteadyMilliseconds()).empty();
-}
+bool isStallReportedAfterHandlerCheck(SharedHangInfo& hang, std::size_t slot);
 
 auto tIdleThreadWithStarvedHeartbeatIsNotReported =
     test("EventWaits/idleThreadWithStarvedHeartbeatIsNotReported") = []
@@ -225,7 +217,7 @@ auto tIdleThreadWithStarvedHeartbeatIsNotReported =
             return id != 0 && isThreadWaitingForWindowMessages(id);
         }));
     watchMainThread(state->hang, loop.threadId.load());
-    check(!isStallReportedAfterHandlerCheck(state->hang));
+    check(!isStallReportedAfterHandlerCheck(state->hang, mainThreadSlot));
 };
 
 auto tBusyThreadIsReported = test("EventWaits/busyThreadIsReported") = []
@@ -242,8 +234,68 @@ auto tBusyThreadIsReported = test("EventWaits/busyThreadIsReported") = []
     check(waitUntil([&] { return busy.load(); }));
     watchMainThread(state->hang, loop.threadId.load());
     check(!isThreadWaitingForWindowMessages(loop.threadId.load()));
-    check(isStallReportedAfterHandlerCheck(state->hang));
+    check(isStallReportedAfterHandlerCheck(state->hang, mainThreadSlot));
     release = true;
+};
+
+// Efficiency mode or a suspended package freezes every thread of the app; a
+// thread that is suspended is frozen, not hung, whichever slot watches it.
+struct SuspendedThread
+{
+    SuspendedThread()
+    {
+        waitUntil([this] { return threadId.load() != 0; });
+        handle = ::OpenThread(THREAD_SUSPEND_RESUME, FALSE, threadId.load());
+        ::SuspendThread(handle);
+    }
+
+    ~SuspendedThread()
+    {
+        ::ResumeThread(handle);
+        ::CloseHandle(handle);
+        release = true;
+        thread.join();
+    }
+
+    std::atomic<DWORD> threadId {0};
+    std::atomic<bool> release {false};
+    std::thread thread {[this]
+                        {
+                            threadId = ::GetCurrentThreadId();
+                            waitUntil([this] { return release.load(); });
+                        }};
+    HANDLE handle = nullptr;
+};
+
+bool isStallReportedAfterHandlerCheck(SharedHangInfo& hang, std::size_t slot)
+{
+    auto& watched = hang.threads[slot];
+    auto now = getSteadyMilliseconds();
+    watched.lastHeartbeatMilliseconds = now - silenceBeforeCheck;
+    heartbeatWatchedThreadsThatAreNotHung(hang, now);
+    auto tracker = StallTracker {};
+    return !takeNewStalls(hang, tracker, getSteadyMilliseconds()).empty();
+}
+
+auto tSuspendedMainThreadIsNotReported =
+    test("EventWaits/suspendedMainThreadIsNotReported") = []
+{
+    auto state = createWatchedState();
+    auto suspended = SuspendedThread {};
+
+    watchMainThread(state->hang, suspended.threadId.load());
+    check(!isStallReportedAfterHandlerCheck(state->hang, mainThreadSlot));
+};
+
+auto tSuspendedWorkerThreadIsNotReported =
+    test("EventWaits/suspendedWorkerThreadIsNotReported") = []
+{
+    auto state = createWatchedState();
+    auto suspended = SuspendedThread {};
+    auto slot = claimWatchedThread(state->hang, "worker", suspended.threadId.load());
+
+    check(slot.has_value());
+    check(!isStallReportedAfterHandlerCheck(state->hang, *slot));
 };
 #endif
 } // namespace EventWaitsTests

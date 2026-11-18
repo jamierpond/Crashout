@@ -468,25 +468,49 @@ bool isDebuggerAttachedTo(HANDLE process)
     return ::CheckRemoteDebuggerPresent(process, &attached) && attached;
 }
 
-Vector<Vector<StackFrame>> sampleStalledThreads(SharedHangInfo& hang,
-                                                HANDLE appProcess,
-                                                const Vector<NewStall>& stalls)
+struct SampledStall
 {
-    auto sampledFrames = Vector<Vector<StackFrame>> {};
+    NewStall stall;
+    Vector<StackFrame> frames;
+};
+
+Vector<SampledStall> sampleStalledThreads(const SharedHangInfo& hang,
+                                          HANDLE appProcess,
+                                          const Vector<NewStall>& stalls)
+{
+    auto sampled = Vector<SampledStall> {};
 
     for (const auto& stall: stalls)
     {
-        const auto& thread = hang.threads[stall.slot];
-        auto frames = sampleWatchedThread(appProcess, thread.threadId);
+        auto frames =
+            sampleWatchedThread(appProcess, hang.threads[stall.slot].threadId);
 
-        if (!frames || !isSameWatchedThread(thread, stall))
+        if (frames)
+            sampled.add({stall, std::move(*frames)});
+    }
+
+    return sampled;
+}
+
+// Sampling loads symbols, which can take seconds, so the heartbeats are read
+// again after it: a thread that sent one meanwhile was frozen, not hung.
+Vector<Vector<StackFrame>> keepStallsStillSilent(SharedHangInfo& hang,
+                                                 Vector<SampledStall>& sampled)
+{
+    auto sampledFrames = Vector<Vector<StackFrame>> {};
+
+    for (auto& [stall, frames]: sampled)
+    {
+        const auto& thread = hang.threads[stall.slot];
+
+        if (!isStillStalled(thread, stall))
             continue;
 
         auto& stalled = hang.stalled[static_cast<std::size_t>(sampledFrames.size())];
         stalled.threadId = thread.threadId;
         stalled.name = thread.name;
         stalled.durationMilliseconds = stall.durationMilliseconds;
-        sampledFrames.add(std::move(*frames));
+        sampledFrames.add(std::move(frames));
     }
 
     return sampledFrames;
@@ -500,13 +524,14 @@ void checkForHang(const ReportDatabase& database,
 {
     auto& hang = connection.state->get().hang;
     auto now = getSteadyMilliseconds();
-    heartbeatMainThreadWhileWaitingForMessages(hang, now);
+    heartbeatWatchedThreadsThatAreNotHung(hang, now);
     auto stalls = takeNewStalls(hang, tracker, now);
 
     if (stalls.empty() || isDebuggerAttachedTo(connection.appProcess))
         return;
 
-    auto sampledFrames = sampleStalledThreads(hang, connection.appProcess, stalls);
+    auto sampled = sampleStalledThreads(hang, connection.appProcess, stalls);
+    auto sampledFrames = keepStallsStillSilent(hang, sampled);
 
     if (sampledFrames.empty())
         return;
